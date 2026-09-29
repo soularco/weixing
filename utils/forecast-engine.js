@@ -273,10 +273,10 @@ function rowsToCsv(rows) {
       row.members === null || row.members === undefined ? '' : row.members,
       row.miniProgram === null || row.miniProgram === undefined ? '' : row.miniProgram,
       row.referral === null || row.referral === undefined ? '' : row.referral,
-      row.promo ? 1 : 0
-      ,row.weather || ''
-      ,row.holiday ? 1 : 0
-      ,row.localEvent ? 1 : 0
+      row.promo ? 1 : 0,
+      row.weather || '',
+      row.holiday ? 1 : 0,
+      row.localEvent ? 1 : 0
     ].join(','));
   });
 
@@ -509,6 +509,15 @@ function buildTrendPoints(rows, futureRows) {
     high: row.high
   }));
 
+  [historyPoints, futurePoints].forEach((pointGroup) => {
+    pointGroup.forEach((point) => {
+      point.actualValue = Number.isFinite(point.actual) ? Math.round(point.actual) : null;
+      point.forecastValue = Number.isFinite(point.forecast) ? Math.round(point.forecast) : null;
+      point.lowValue = Number.isFinite(point.low) ? Math.round(point.low) : null;
+      point.highValue = Number.isFinite(point.high) ? Math.round(point.high) : null;
+    });
+  });
+
   return historyPoints.concat(futurePoints);
 }
 
@@ -723,12 +732,6 @@ function buildTableRows(rows, futureRows, confidence) {
   return historyRows.concat(futureTableRows);
 }
 
-function closestPercentage(value, min, max) {
-  if (max === min) {
-    return 80;
-  }
-  return clamp(Math.round(((value - min) / (max - min)) * 72 + 28), 20, 100);
-}
 
 function buildRecommendations(drivers, scenarioMultiplier, horizon, peak) {
   const trend = drivers.find((item) => item.title === '近期客流趋势') || {};
@@ -939,6 +942,7 @@ function calculateForecast(rows, options) {
     peakLabel: peak.date ? formatDateLong(peak.date) : peak.dateLabel,
     peakTraffic: formatNumber(peak.traffic),
     averageTraffic: formatNumber(average),
+    averageTrafficValue: Math.round(average),
     lastTraffic: formatNumber(lastTraffic),
     historyChange: formatPercent(((lastTraffic - firstTraffic) / Math.max(firstTraffic, 1)) * 100),
     volatility: `${round(volatility, 1)}%`,
@@ -946,9 +950,22 @@ function calculateForecast(rows, options) {
     rangeDays: horizon,
     bars: futureRows.map((row) => ({
       label: row.dateLabel,
-      value: closestPercentage(row.traffic, futureMinimum, futureMaximum),
-      trafficText: formatNumber(row.traffic)
+      date: row.dateValue,
+      weekday: row.date ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][row.date.getDay()] : row.label,
+      value: futureMaximum ? Math.max(8, Math.round((row.traffic / futureMaximum) * 100)) : 8,
+      trafficValue: Math.round(row.traffic),
+      trafficText: formatNumber(row.traffic),
+      salesValue: Math.round(row.sales),
+      salesText: formatNumber(row.sales),
+      lowText: formatNumber(row.low),
+      highText: formatNumber(row.high),
+      intervalText: `${formatNumber(row.low)} ~ ${formatNumber(row.high)}`
     })),
+    barScale: {
+      max: formatNumber(futureMaximum),
+      mid: formatNumber(futureMaximum / 2),
+      min: '0'
+    },
     trendPoints: buildTrendPoints(recentRows, futureRows),
     distribution,
     distributionStats: [

@@ -7,127 +7,26 @@
     <view class="status-chip">{{forecast ? forecast.rangeLabel : '准备中'}}</view>
   </view>
 
-  <view class="card import-card">
-    <view class="card-head" bindtap="togglePanel" data-key="dataExpanded">
-      <view class="card-head-main">
-        <view class="card-title-row">
-          <view class="card-title">数据导入与计算</view>
-          <view class="data-state">{{importSummary}}</view>
-        </view>
-        <view class="card-note">支持 CSV、JSON，可粘贴或选择文件。数据只在本机页面内计算。</view>
-      </view>
-      <view class="expand-link">{{dataExpanded ? '收起' : '展开'}}</view>
-    </view>
-
-    <view wx:if="{{dataExpanded}}" class="card-body import-body">
-      <view class="button-row import-actions">
-        <button class="secondary-button" bindtap="chooseDataFile">选择文件</button>
-        <button class="secondary-button" bindtap="loadSampleToEditor">载入样例</button>
-        <button class="secondary-button" bindtap="restoreSampleData">恢复样例</button>
-      </view>
-
-      <textarea
-        class="data-editor"
-        value="{{importText}}"
-        bindinput="handleImportInput"
-        maxlength="-1"
-        placeholder="date,traffic,sales,staff,stock,members,miniProgram,referral,promo&#10;2026-09-01,742,48600,7,168,176,118,62,0"
-        placeholder-class="editor-placeholder"
-      ></textarea>
-
-      <view class="import-footer">
-        <view class="import-message {{importMessage ? 'import-message-active' : ''}}">{{importMessage || '可直接导入现有 POS、客流或人工统计数据。'}}</view>
-        <view class="button-row import-submit">
-          <button class="secondary-button compact-button" bindtap="clearImportEditor">清空</button>
-          <button class="primary-button compact-button" bindtap="importFromEditor">导入并计算</button>
-        </view>
-      </view>
-    </view>
+  <view wx:if="{{loading}}" class="card empty-state">
+    正在载入经营数据...
   </view>
 
-  <view class="segmented">
-    <view
-      wx:for="{{rangeOptions}}"
-      wx:key="value"
-      class="segment {{range === item.value ? 'segment-active' : ''}}"
-      data-range="{{item.value}}"
-      bindtap="selectRange"
-    >{{item.label}}</view>
-  </view>
-
-  <view class="card context-card">
-    <view class="card-head">
-      <view class="card-head-main">
-        <view class="card-title">门店与地理位置</view>
-        <view class="card-note">{{storeContextSummary}}</view>
-      </view>
-      <view class="expand-link" bindtap="openStorePage">选择门店</view>
-    </view>
-    <view wx:if="{{storeContext}}" class="context-grid">
-      <view class="context-item"><view class="metric-label">周边 1 公里</view><view class="context-value">{{storeContext.within1km}} 家</view></view>
-      <view class="context-item"><view class="metric-label">竞争等级</view><view class="context-value">{{storeContext.competitionLevel}}</view></view>
-      <view class="context-item"><view class="metric-label">位置因子</view><view class="context-value">{{storeContext.locationFactor}}</view></view>
-    </view>
-    <view wx:if="{{storeContext}}" class="context-reason">{{storeContext.reasoning}}</view>
-  </view>
-
-  <view class="card algorithm-card">
-    <view class="card-head">
-      <view class="card-head-main">
-        <view class="card-title">预测算法</view>
-        <view class="card-note">当前：{{algorithmLabel}}。可切换到指数平滑或周周期 Holt-Winters 对比。</view>
-      </view>
-    </view>
-    <view class="algorithm-tabs">
-      <view
-        wx:for="{{algorithmOptions}}"
-        wx:key="value"
-        class="algorithm-tab {{algorithm === item.value ? 'algorithm-tab-active' : ''}}"
-        data-algorithm="{{item.value}}"
-        bindtap="selectAlgorithm"
-      >{{item.label}}</view>
-    </view>
-  </view>
-
-  <view class="card factor-control-card">
-    <view class="card-head">
-      <view class="card-head-main">
-        <view class="card-title">外部影响因素</view>
-        <view class="card-note">天气、节假日、促销和周边活动会直接改变预测结果。</view>
-      </view>
-    </view>
-    <view class="factor-control-row">
-      <view class="factor-control-label">天气</view>
-      <picker range="{{weatherOptions}}" bindchange="selectWeather">
-        <view class="factor-picker">{{externalFactors.weather}} ›</view>
-      </picker>
-    </view>
-    <view class="factor-control-row">
-      <view class="factor-control-label">节假日</view>
-      <view class="factor-switch {{externalFactors.holiday ? 'factor-switch-on' : ''}}" data-key="holiday" bindtap="toggleExternalFactor">{{externalFactors.holiday ? '已计入' : '未计入'}}</view>
-    </view>
-    <view class="factor-control-row">
-      <view class="factor-control-label">促销活动</view>
-      <view class="factor-switch {{externalFactors.promotion ? 'factor-switch-on' : ''}}" data-key="promotion" bindtap="toggleExternalFactor">{{externalFactors.promotion ? '已计入' : '未计入'}}</view>
-    </view>
-    <view class="factor-control-row">
-      <view class="factor-control-label">本地活动</view>
-      <view class="factor-switch {{externalFactors.localEvent ? 'factor-switch-on' : ''}}" data-key="localEvent" bindtap="toggleExternalFactor">{{externalFactors.localEvent ? '已计入' : '未计入'}}</view>
-    </view>
-  </view>
-
-  <view wx:if="{{loading || calculating}}" class="card empty-state">
-    {{loading ? '正在载入经营数据...' : '正在重新计算结果...'}}
+  <view wx:elif="{{!forecast}}" class="card empty-state">
+    暂无可用预测，请展开数据导入与计算后重试。
   </view>
 
   <block wx:else>
-    <view class="card forecast-summary">
+    <view class="card forecast-summary forecast-hero">
+      <view class="hero-glow"></view>
       <view class="summary-head" bindtap="togglePanel" data-key="summaryExpanded">
         <view class="summary-title-row">
-          <view class="summary-kicker">{{forecast.rangeLabel}}预测</view>
-          <view class="summary-expand">{{summaryExpanded ? '收起依据' : '打开依据'}}</view>
+          <view>
+            <view class="hero-eyebrow">{{range === 'tomorrow' ? '明日预测' : forecast.rangeLabel + '预测'}}</view>
+            <view class="summary-kicker">{{forecast.rangeLabel}}经营结果</view>
+          </view>
+          <view class="summary-expand">{{summaryExpanded ? '收起依据' : '打开推演依据'}}</view>
         </view>
-        <view class="summary-number">{{forecast.predictedTraffic}}<text class="metric-unit">人次</text></view>
+        <view class="summary-number">{{forecast.predictedTraffic}}<text class="metric-unit hero-unit">人次</text></view>
         <view class="summary-detail">{{forecast.changeText}} · 置信度 {{forecast.confidence}}%</view>
         <view class="summary-split">
           <view>
@@ -137,6 +36,13 @@
           <view>
             <view class="metric-label">预测峰值</view>
             <view class="summary-small">{{forecast.peakLabel}}</view>
+          </view>
+        </view>
+        <view class="hero-foot">
+          <view class="hero-model">{{forecast.method}}</view>
+          <view class="hero-confidence">
+            <view class="hero-confidence-track"><view class="hero-confidence-fill" style="width: {{forecast.confidence}}%;"></view></view>
+            <text>{{forecast.confidence}}% 置信</text>
           </view>
         </view>
       </view>
@@ -214,11 +120,111 @@
       </view>
     </view>
 
+    <view class="segmented forecast-range">
+      <view
+        wx:for="{{rangeOptions}}"
+        wx:key="value"
+        class="segment {{range === item.value ? 'segment-active' : ''}}"
+        data-range="{{item.value}}"
+        bindtap="selectRange"
+      >{{item.label}}</view>
+    </view>
+
+    <view class="card import-card">
+      <view class="card-head" bindtap="togglePanel" data-key="dataExpanded">
+        <view class="card-head-main">
+          <view class="card-title-row">
+            <view class="card-title">数据导入与计算</view>
+            <view class="data-state">{{importSummary}}</view>
+          </view>
+          <view class="card-note">{{importSourceLabel}} · 支持 CSV、JSON 与结构化文本，数据只在本机计算。</view>
+        </view>
+        <view class="expand-link">{{dataExpanded ? '收起' : '展开'}}</view>
+      </view>
+
+      <view wx:if="{{dataExpanded}}" class="card-body import-body">
+        <view class="import-mode">
+          <view
+            wx:for="{{importModes}}"
+            wx:key="value"
+            class="import-mode-tab {{importMode === item.value ? 'import-mode-tab-active' : ''}}"
+            data-mode="{{item.value}}"
+            bindtap="selectImportMode"
+          >{{item.label}}</view>
+        </view>
+
+        <view wx:if="{{importMode === 'text'}}" class="source-panel">
+          <view class="structure-panel">
+            <view class="structure-head">
+              <view class="structure-title">字段结构</view>
+              <view class="structure-status {{importDraftStats.status === '结构可导入' ? 'structure-status-ready' : ''}}">{{importDraftStats.status}}</view>
+            </view>
+            <view class="field-chip-row">
+              <view class="field-chip field-chip-required">date 日期</view>
+              <view class="field-chip field-chip-required">traffic 客流</view>
+              <view class="field-chip field-chip-required">sales 销售额</view>
+            </view>
+            <view class="field-chip-row field-chip-row-secondary">
+              <view class="field-chip">staff</view>
+              <view class="field-chip">stock</view>
+              <view class="field-chip">members</view>
+              <view class="field-chip">miniProgram</view>
+              <view class="field-chip">referral</view>
+              <view class="field-chip">promo</view>
+              <view class="field-chip">weather</view>
+              <view class="field-chip">holiday</view>
+            </view>
+            <view class="structure-foot">
+              <text>已识别 {{importDraftStats.rows}} 行数据、{{importDraftStats.columns}} 列字段</text>
+              <text>至少需要 3 行有效记录</text>
+            </view>
+          </view>
+
+          <textarea
+            class="data-editor"
+            value="{{importText}}"
+            bindinput="handleImportInput"
+            maxlength="-1"
+            placeholder="date,traffic,sales,staff,stock,members,miniProgram,referral,promo,weather,holiday,localEvent&#10;2026-09-01,742,48600,7,168,176,118,62,0,晴,0,0"
+            placeholder-class="editor-placeholder"
+          ></textarea>
+
+          <view class="import-footer">
+            <view class="import-message {{importMessage ? 'import-message-active' : ''}}">{{importMessage || '可直接导入现有 POS、客流或人工统计数据。'}}</view>
+            <view class="button-row import-submit">
+              <button class="secondary-button compact-button" bindtap="clearImportEditor">清空</button>
+              <button class="primary-button compact-button" bindtap="importFromEditor">导入并计算</button>
+            </view>
+          </view>
+        </view>
+
+        <view wx:else class="source-panel">
+          <view class="file-drop">
+            <view class="file-drop-title">文件导入</view>
+            <view class="file-drop-note">选择聊天文件或本地文件，支持 UTF-8 编码的 CSV、JSON、TXT。</view>
+            <view class="file-drop-types">
+              <text class="file-type-chip">CSV</text>
+              <text class="file-type-chip">JSON</text>
+              <text class="file-type-chip">TXT</text>
+            </view>
+            <button class="primary-button file-button" bindtap="chooseDataFile">选择数据文件</button>
+          </view>
+          <view class="import-message {{importMessage ? 'import-message-active' : ''}}">{{importMessage || '文件会先进行字段映射与有效性校验，再进入本地计算。'}}</view>
+        </view>
+
+        <view class="utility-row">
+          <button class="secondary-button compact-button" bindtap="loadSampleToEditor">载入样例到文本框</button>
+          <button class="secondary-button compact-button" bindtap="copyImportTemplate">复制数据模板</button>
+          <button class="secondary-button compact-button" bindtap="restoreSampleData">恢复内置样例</button>
+        </view>
+      </view>
+    </view>
+
     <view class="section">
       <view class="section-heading">
         <view>
           <view class="section-title">预测走势与置信区间</view>
-          <view class="section-note">实线为实际客流，虚线为预测，细线为高低区间。</view>
+          <view class="section-note">触摸或拖动图表，查看对应日期的实际、预测与高低区间。</view>
         </view>
         <view class="chart-legend">
           <text class="legend-dot actual-dot"></text>实际
@@ -226,7 +232,27 @@
         </view>
       </view>
       <view class="card chart-card">
-        <canvas type="2d" id="trendCanvas" class="trend-canvas"></canvas>
+        <canvas
+          type="2d"
+          id="trendCanvas"
+          class="trend-canvas"
+          bindtouchstart="handleTrendTouch"
+          bindmousemove="handleTrendTouch"
+          catchtouchmove="handleTrendTouch"
+          bindtouchend="handleTrendTouchEnd"
+          bindtouchcancel="handleTrendTouchEnd"
+        ></canvas>
+        <view class="chart-focus-strip {{trendFocus ? 'chart-focus-active' : ''}}">
+          <block wx:if="{{trendFocus}}">
+            <view class="focus-title">{{trendFocus.label}} · {{trendFocus.status}}</view>
+            <view class="focus-metrics">
+              <text>实际 {{trendFocus.actual}}</text>
+              <text>预测 {{trendFocus.forecast}}</text>
+              <text>区间 {{trendFocus.interval}}</text>
+            </view>
+          </block>
+          <view wx:else class="focus-placeholder">拖动或点击走势图查看指定日期的数据</view>
+        </view>
         <view class="chart-stat-row">
           <view class="chart-stat">
             <view class="chart-stat-label">近期均值</view>
@@ -245,22 +271,49 @@
     </view>
 
     <view class="section">
-      <view class="section-title">客流分布</view>
-      <view class="section-note">结合会员、小程序和转介绍数据计算来源占比，保留原有绿色配色。</view>
+      <view class="section-heading">
+        <view>
+          <view class="section-title">客流分布</view>
+          <view class="section-note">触摸扇区或点击来源标签，查看来源占比与对应颜色。</view>
+        </view>
+        <view class="mini-chip">最近 14 天</view>
+      </view>
       <view class="card distribution-card">
         <view class="distribution-layout">
-          <canvas type="2d" id="distributionCanvas" class="distribution-canvas"></canvas>
+          <canvas
+            type="2d"
+            id="distributionCanvas"
+            class="distribution-canvas"
+            bindtouchstart="handleDistributionTouch"
+            bindmousemove="handleDistributionTouch"
+            catchtouchmove="handleDistributionTouch"
+            bindtouchend="handleDistributionTouchEnd"
+            bindtouchcancel="handleDistributionTouchEnd"
+          ></canvas>
           <view class="distribution-legend">
-            <view class="legend-row" wx:for="{{forecast.distribution}}" wx:key="label">
+            <view
+              class="legend-row {{distributionActiveIndex === index ? 'legend-row-active' : ''}}"
+              wx:for="{{forecast.distribution}}"
+              wx:key="label"
+              data-index="{{index}}"
+              bindtap="focusDistributionSegment"
+            >
               <view class="legend-name"><text class="legend-color" style="background: {{item.color}};"></text>{{item.label}}</view>
               <view class="legend-value">{{item.value}}%</view>
             </view>
           </view>
         </view>
+        <view class="distribution-focus {{distributionFocus ? 'distribution-focus-active' : ''}}">
+          <block wx:if="{{distributionFocus}}">
+            <view class="distribution-focus-label"><text class="legend-color" style="background: {{distributionFocus.color}};"></text>{{distributionFocus.label}}</view>
+            <view class="distribution-focus-value">{{distributionFocus.value}}%</view>
+          </block>
+          <view wx:else class="focus-placeholder">触摸圆环查看来源构成</view>
+        </view>
       </view>
 
       <view class="metric-grid compact-grid distribution-stats">
-        <view class="metric-card quiet-card" wx:for="{{forecast.distributionStats}}" wx:key="label">
+        <view class="metric-card jade-card" wx:for="{{forecast.distributionStats}}" wx:key="label">
           <view class="metric-label">{{item.label}}</view>
           <view class="metric-value small-value">{{item.value}}</view>
           <view class="metric-note">{{item.note}}</view>
@@ -271,18 +324,47 @@
         <view class="chart-head">
           <view>
             <view class="sub-title">逐日客流柱状图</view>
-            <view class="card-note">柱顶标记预测客流量，避免只显示相对高度。</view>
+            <view class="card-note">柱高按预测峰值等比绘制，细线与标签同步标出数值。</view>
           </view>
           <view class="mini-chip">{{forecast.rangeDays}} 天</view>
         </view>
-        <view class="bar-chart">
-          <view class="bar-column" wx:for="{{forecast.bars}}" wx:key="label">
-            <view class="bar-value">{{item.trafficText}}</view>
-            <view class="bar-track">
-              <view class="bar-fill" style="height: {{item.value}}%;"></view>
+        <scroll-view scroll-x class="bar-scroll">
+          <view class="bar-chart-shell" style="min-width: {{forecast.rangeDays > 4 ? '760rpx' : '100%'}};">
+            <view class="bar-grid">
+              <view class="bar-grid-line bar-grid-line-top"><text>{{forecast.barScale.max}}</text></view>
+              <view class="bar-grid-line bar-grid-line-mid"><text>{{forecast.barScale.mid}}</text></view>
+              <view class="bar-grid-line bar-grid-line-bottom"><text>{{forecast.barScale.min}}</text></view>
             </view>
-            <view class="bar-label">{{item.label}}</view>
+            <view class="bar-chart">
+              <view
+                class="bar-column {{barActiveIndex === index ? 'bar-column-active' : ''}}"
+                wx:for="{{forecast.bars}}"
+                wx:key="date"
+                data-index="{{index}}"
+                bindtap="focusBar"
+              >
+                <view class="bar-value">{{item.trafficText}}</view>
+                <view class="bar-track">
+                  <view class="bar-fill" style="height: {{item.value}}%;"></view>
+                </view>
+                <view class="bar-label">{{item.label}}</view>
+                <view class="bar-weekday">{{item.weekday}}</view>
+              </view>
+            </view>
           </view>
+        </scroll-view>
+        <view class="bar-focus {{barFocus ? 'bar-focus-active' : ''}}">
+          <block wx:if="{{barFocus}}">
+            <view class="bar-focus-main">
+              <view class="focus-title">{{barFocus.date}} · {{barFocus.weekday}}</view>
+              <view class="focus-metrics">
+                <text>客流 {{barFocus.trafficText}}</text>
+                <text>销售额 ¥{{barFocus.salesText}}</text>
+                <text>区间 {{barFocus.intervalText}}</text>
+              </view>
+            </view>
+            <view class="bar-focus-value">{{barFocus.trafficText}}</view>
+          </block>
         </view>
       </view>
     </view>
@@ -409,6 +491,82 @@
       </view>
     </view>
 
+    <view class="section control-section">
+      <view class="section-heading">
+        <view>
+          <view class="section-title">情景控制与位置校准</view>
+          <view class="section-note">影响模型输入的控制面板集中在图表之后，调整后会立即重算。</view>
+        </view>
+      </view>
+
+      <view class="card context-card control-card context-control" bindtap="openStorePage" hover-class="control-card-active">
+        <view class="control-card-head">
+          <view class="control-badge context-badge">位</view>
+          <view class="control-card-copy">
+            <view class="card-title">门店与地理位置</view>
+            <view class="card-note">{{storeContextSummary}}</view>
+          </view>
+          <view class="expand-link">选择门店</view>
+        </view>
+        <view wx:if="{{storeContext}}" class="context-grid">
+          <view class="context-item"><view class="metric-label">周边 1 公里</view><view class="context-value">{{storeContext.within1km}} 家</view></view>
+          <view class="context-item"><view class="metric-label">竞争等级</view><view class="context-value">{{storeContext.competitionLevel}}</view></view>
+          <view class="context-item"><view class="metric-label">位置因子</view><view class="context-value">{{storeContext.locationFactor}}</view></view>
+        </view>
+        <view wx:if="{{storeContext}}" class="context-reason">{{storeContext.reasoning}}</view>
+        <view wx:else class="control-empty">未选择门店，点击进入门店页读取定位与周边店铺。</view>
+      </view>
+
+      <view class="card algorithm-card control-card algorithm-control">
+        <view class="control-card-head">
+          <view class="control-badge algorithm-badge">算</view>
+          <view class="control-card-copy">
+            <view class="card-title">预测算法</view>
+            <view class="card-note">当前：{{algorithmLabel}}。切换算法会立即重新回测并更新置信度。</view>
+          </view>
+          <view class="mini-chip">即时重算</view>
+        </view>
+        <view class="algorithm-tabs">
+          <view
+            wx:for="{{algorithmOptions}}"
+            wx:key="value"
+            class="algorithm-tab {{algorithm === item.value ? 'algorithm-tab-active' : ''}}"
+            data-algorithm="{{item.value}}"
+            bindtap="selectAlgorithm"
+          >{{item.label}}</view>
+        </view>
+      </view>
+
+      <view class="card factor-control-card control-card factor-control">
+        <view class="control-card-head">
+          <view class="control-badge factor-badge">因</view>
+          <view class="control-card-copy">
+            <view class="card-title">外部影响因素</view>
+            <view class="card-note">天气、节假日、促销和周边活动会直接改变预测结果。</view>
+          </view>
+          <view class="mini-chip">{{externalFactors.weather}}</view>
+        </view>
+        <view class="factor-control-row">
+          <view class="factor-control-label">天气</view>
+          <picker range="{{weatherOptions}}" bindchange="selectWeather">
+            <view class="factor-picker">{{externalFactors.weather}} ›</view>
+          </picker>
+        </view>
+        <view class="factor-control-row">
+          <view class="factor-control-label">节假日</view>
+          <view class="factor-switch {{externalFactors.holiday ? 'factor-switch-on' : ''}}" data-key="holiday" bindtap="toggleExternalFactor">{{externalFactors.holiday ? '已计入' : '未计入'}}</view>
+        </view>
+        <view class="factor-control-row">
+          <view class="factor-control-label">促销活动</view>
+          <view class="factor-switch {{externalFactors.promotion ? 'factor-switch-on' : ''}}" data-key="promotion" bindtap="toggleExternalFactor">{{externalFactors.promotion ? '已计入' : '未计入'}}</view>
+        </view>
+        <view class="factor-control-row">
+          <view class="factor-control-label">本地活动</view>
+          <view class="factor-switch {{externalFactors.localEvent ? 'factor-switch-on' : ''}}" data-key="localEvent" bindtap="toggleExternalFactor">{{externalFactors.localEvent ? '已计入' : '未计入'}}</view>
+        </view>
+      </view>
+    </view>
+
     <view class="page-footnote">预测结果来自历史数据统计，不构成经营保证；上线生产时建议将模型接口放入云函数。</view>
     <view class="section">
       <view class="section-title">预测误差追踪</view>
@@ -429,6 +587,5 @@
         </view>
       </view>
     </view>
-
   </block>
 </view>

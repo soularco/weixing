@@ -1,7 +1,6 @@
 const operations = require('../../services/operations');
 const forecastEngine = require('../../utils/forecast-engine');
 const forecastStore = require('../../utils/forecast-store');
-const storeContextUtil = require('../../utils/store-context');
 
 const RANGE_CONFIG = {
   tomorrow: { horizon: 1, label: '明日' },
@@ -32,6 +31,49 @@ function getPixelRatio() {
   } catch (error) {
     return 1;
   }
+}
+
+function getTouchPoint(event) {
+  const source = event && event.touches && event.touches.length
+    ? event.touches
+    : event && event.changedTouches ? event.changedTouches : [];
+  const touch = source[0] || (event && event.detail ? event.detail : event);
+  if (!touch) {
+    return null;
+  }
+  const x = Number(touch.x !== undefined ? touch.x : touch.clientX);
+  const y = Number(touch.y !== undefined ? touch.y : touch.clientY);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
+function buildTrendFocus(point) {
+  if (!point) {
+    return null;
+  }
+  const actual = Number.isFinite(point.actualValue) ? `${point.actualValue}` : '--';
+  const forecast = Number.isFinite(point.forecastValue) ? `${point.forecastValue}` : '--';
+  const interval = Number.isFinite(point.lowValue) && Number.isFinite(point.highValue)
+    ? `${point.lowValue} ~ ${point.highValue}`
+    : '--';
+  return {
+    label: point.label,
+    actual,
+    forecast,
+    interval,
+    status: Number.isFinite(point.actualValue) ? '实际客流' : '预测客流'
+  };
+}
+
+function buildDistributionFocus(item, index) {
+  if (!item) {
+    return null;
+  }
+  return {
+    index,
+    label: item.label,
+    value: item.value,
+    color: item.color
+  };
 }
 
 Page({
@@ -72,6 +114,13 @@ Page({
     importText: '',
     importSummary: '内置 28 天样板数据',
     importMessage: '',
+    importMode: 'text',
+    importModes: [
+      { label: '文本粘贴', value: 'text' },
+      { label: '选择文件', value: 'file' }
+    ],
+    importDraftStats: { rows: 0, columns: 0, status: '等待输入' },
+    importSourceLabel: '本机数据',
     modelMode: 'builtin',
     apiUrl: '',
     apiKey: '',
@@ -80,7 +129,13 @@ Page({
     scenarioText: '1.00x',
     customStatus: '',
     customAnalysis: '',
-    customError: ''
+    customError: '',
+    trendActiveIndex: -1,
+    trendFocus: null,
+    distributionActiveIndex: -1,
+    distributionFocus: null,
+    barActiveIndex: 0,
+    barFocus: null
   },
 
   onLoad() {
@@ -103,9 +158,10 @@ Page({
       const errorStats = forecastStore.getErrorStats(runs);
       const context = forecastStore.getStoreContext();
       this.setData({
-        loading: false,
         importSummary: `${this.sourceMeta.validCount} 天${saved ? '本机保存' : '样例'}数据可用`,
         importText: '',
+        importSourceLabel: saved ? '本机保存数据' : '内置样例数据',
+        importDraftStats: this.getImportDraftStats(''),
         storeContext: context,
         storeContextSummary: context && context.store ? `${context.store.name} · ${context.competitionLevel}竞争` : '未选择门店，使用基础预测',
         forecastRuns: runs.slice(0, 4),
@@ -162,6 +218,93 @@ Page({
     });
   },
 
+  focusBar(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    const bars = this.data.forecast && this.data.forecast.bars ? this.data.forecast.bars : [];
+    if (!Number.isInteger(index) || index < 0 || index >= bars.length) {
+      return;
+    }
+    this.setData({
+      barActiveIndex: index,
+      barFocus: bars[index]
+    });
+  },
+
+  handleTrendTouch(event) {
+    const touch = getTouchPoint(event);
+    const layout = this.trendLayout;
+    const points = this.data.forecast && this.data.forecast.trendPoints ? this.data.forecast.trendPoints : [];
+    if (!touch || !layout || !points.length) {
+      return;
+    }
+    const ratio = (touch.x - layout.plot.left) / Math.max(layout.plot.right - layout.plot.left, 1);
+    const index = Math.min(Math.max(Math.round(ratio * Math.max(points.length - 1, 0)), 0), points.length - 1);
+    if (index === this.data.trendActiveIndex) {
+      return;
+    }
+    this.setData({
+      trendActiveIndex: index,
+      trendFocus: buildTrendFocus(points[index])
+    }, () => {
+      this.drawTrendChart(points, index);
+    });
+  },
+
+  handleTrendTouchEnd() {},
+
+  handleDistributionTouch(event) {
+    const touch = getTouchPoint(event);
+    const layout = this.distributionLayout;
+    const distribution = this.data.forecast && this.data.forecast.distribution ? this.data.forecast.distribution : [];
+    if (!touch || !layout || !distribution.length) {
+      return;
+    }
+    const deltaX = touch.x - layout.centerX;
+    const deltaY = touch.y - layout.centerY;
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    if (Math.abs(distance - layout.radius) > layout.thickness * 0.78) {
+      return;
+    }
+    const startAngle = -Math.PI / 2;
+    const angle = Math.atan2(deltaY, deltaX);
+    const normalized = (angle - startAngle + Math.PI * 2) % (Math.PI * 2);
+    const target = normalized / (Math.PI * 2);
+    let cumulative = 0;
+    let index = distribution.length - 1;
+    for (let itemIndex = 0; itemIndex < distribution.length; itemIndex += 1) {
+      cumulative += Number(distribution[itemIndex].value) / 100;
+      if (target <= cumulative) {
+        index = itemIndex;
+        break;
+      }
+    }
+    if (index === this.data.distributionActiveIndex) {
+      return;
+    }
+    this.setData({
+      distributionActiveIndex: index,
+      distributionFocus: buildDistributionFocus(distribution[index], index)
+    }, () => {
+      this.drawDistributionChart(distribution, index);
+    });
+  },
+
+  handleDistributionTouchEnd() {},
+
+  focusDistributionSegment(event) {
+    const index = Number(event.currentTarget.dataset.index);
+    const distribution = this.data.forecast && this.data.forecast.distribution ? this.data.forecast.distribution : [];
+    if (!Number.isInteger(index) || index < 0 || index >= distribution.length) {
+      return;
+    }
+    this.setData({
+      distributionActiveIndex: index,
+      distributionFocus: buildDistributionFocus(distribution[index], index)
+    }, () => {
+      this.drawDistributionChart(distribution, index);
+    });
+  },
+
   recalculateForecast(range) {
     if (!this.sourceRows || !this.sourceRows.length) {
       return;
@@ -186,9 +329,19 @@ Page({
         storeContext: this.data.storeContext,
         externalFactors: this.data.externalFactors
       });
+      const nextForecast = this.decorateForecast(forecast);
+      const barIndex = nextForecast.bars && nextForecast.bars.length ? 0 : -1;
+      const barFocus = barIndex >= 0 ? nextForecast.bars[barIndex] : null;
       this.setData({
         calculating: false,
-        forecast: this.decorateForecast(forecast)
+        forecast: nextForecast,
+        loading: false,
+        trendActiveIndex: -1,
+        trendFocus: null,
+        distributionActiveIndex: -1,
+        distributionFocus: null,
+        barActiveIndex: barIndex,
+        barFocus
       }, () => {
         forecastStore.saveForecastOutputs(forecast, this.data.storeContext);
         forecastStore.recordPredictionRun(forecast);
@@ -203,6 +356,7 @@ Page({
     } catch (error) {
       this.setData({
         calculating: false,
+        loading: false,
         importMessage: error.message || '预测计算失败，请检查数据。'
       });
     }
@@ -232,24 +386,69 @@ Page({
     };
   },
 
+  getImportDraftStats(text) {
+    const lines = String(text || '').split(/\r?\n/).filter((line) => line.trim());
+    const header = lines[0] || '';
+    const delimiter = header.indexOf('\t') >= 0 ? '\t' : header.indexOf(';') >= 0 ? ';' : ',';
+    const columns = header ? header.split(delimiter).filter((item) => item.trim()).length : 0;
+    const rows = Math.max(lines.length - 1, 0);
+    let status = '等待输入';
+    if (lines.length) {
+      if (rows < 1) {
+        status = '需要表头与数据行';
+      } else if (columns < 3) {
+        status = '至少需要日期、客流、销售额';
+      } else if (rows < 3) {
+        status = '结构正常，至少还需 3 行';
+      } else {
+        status = '结构可导入';
+      }
+    }
+    return { rows, columns, status };
+  },
+
   handleImportInput(event) {
     this.setData({
       importText: event.detail.value,
-      importMessage: ''
+      importMessage: '',
+      importDraftStats: this.getImportDraftStats(event.detail.value)
     });
   },
 
   loadSampleToEditor() {
+    const sample = forecastEngine.rowsToCsv(this.sourceRows || []);
     this.setData({
-      importText: forecastEngine.rowsToCsv(this.sourceRows || []),
+      importMode: 'text',
+      importText: sample,
+      importDraftStats: this.getImportDraftStats(sample),
+      importSourceLabel: '样例数据已载入编辑框',
       importMessage: '样例已放入输入框，可编辑后重新计算。'
     });
+  },
+
+  copyImportTemplate() {
+    const rows = (this.sourceRows || []).slice(0, 3);
+    const template = rows.length ? forecastEngine.rowsToCsv(rows) : 'date,traffic,sales,staff,stock,members,miniProgram,referral,promo,weather,holiday,localEvent\n2026-09-01,742,48600,7,168,176,118,62,0,晴,0,0';
+    wx.setClipboardData({
+      data: template,
+      success: () => {
+        this.setData({ importMessage: '数据模板已复制，可直接粘贴到表格或输入框。' });
+      }
+    });
+  },
+
+  selectImportMode(event) {
+    const mode = event.currentTarget.dataset.mode;
+    if (mode === 'file' || mode === 'text') {
+      this.setData({ importMode: mode, importMessage: '' });
+    }
   },
 
   clearImportEditor() {
     this.setData({
       importText: '',
-      importMessage: ''
+      importMessage: '',
+      importDraftStats: this.getImportDraftStats('')
     });
   },
 
@@ -261,7 +460,9 @@ Page({
       this.setData({
         importText: '',
         importSummary: `${payload.meta.validCount} 天样例数据可用`,
-        importMessage: '已恢复内置样例。'
+        importMessage: '已恢复内置样例。',
+        importSourceLabel: '内置样例数据',
+        importDraftStats: this.getImportDraftStats('')
       }, () => {
         this.recalculateForecast(this.data.range);
       });
@@ -287,7 +488,7 @@ Page({
           filePath: file.path,
           encoding: 'utf8',
           success: (fileResult) => {
-            this.importTextData(fileResult.data, 'message-file');
+            this.importTextData(fileResult.data, 'message-file', file.name || '已选择文件');
           },
           fail: () => {
             this.setData({ importMessage: '文件读取失败，请确认文件为 UTF-8 编码。' });
@@ -297,7 +498,7 @@ Page({
     });
   },
 
-  importTextData(text, sourceType) {
+  importTextData(text, sourceType, fileName) {
     try {
       const parsed = forecastEngine.parseImportText(text);
       this.sourceRows = parsed.rows;
@@ -309,7 +510,9 @@ Page({
       this.setData({
         importSummary: `有效 ${parsed.meta.validCount} 行，剔除 ${parsed.meta.invalidCount} 行`,
         importMessage: '数据已通过格式校验，正在使用本地模型计算。',
-        importText: String(text || '')
+        importText: String(text || ''),
+        importDraftStats: this.getImportDraftStats(text),
+        importSourceLabel: fileName || (sourceType === 'message-file' ? '已选择文件' : '文本框输入')
       }, () => {
         this.recalculateForecast(this.data.range);
         wx.showToast({ title: '导入并计算完成', icon: 'success' });
@@ -512,8 +715,8 @@ Page({
       return;
     }
     wx.nextTick(() => {
-      this.drawTrendChart(this.data.forecast.trendPoints || []);
-      this.drawDistributionChart(this.data.forecast.distribution || []);
+      this.drawTrendChart(this.data.forecast.trendPoints || [], this.data.trendActiveIndex);
+      this.drawDistributionChart(this.data.forecast.distribution || [], this.data.distributionActiveIndex);
     });
   },
 
@@ -536,7 +739,7 @@ Page({
       });
   },
 
-  drawTrendChart(points) {
+  drawTrendChart(points, activeIndex) {
     if (!points.length) {
       return;
     }
@@ -565,6 +768,8 @@ Page({
       };
       const mapX = (index) => plot.left + (index / Math.max(points.length - 1, 1)) * (plot.right - plot.left);
       const mapY = (value) => plot.bottom - ((value - minimum) / Math.max(maximum - minimum, 1)) * (plot.bottom - plot.top);
+      const selectedIndex = Number.isInteger(activeIndex) ? Math.min(Math.max(activeIndex, -1), points.length - 1) : -1;
+      this.trendLayout = { plot, points };
 
       context.clearRect(0, 0, width, height);
       context.lineWidth = 1;
@@ -685,6 +890,28 @@ Page({
       context.stroke();
       context.setLineDash([]);
 
+      if (selectedIndex >= 0) {
+        const selectedPoint = points[selectedIndex];
+        const selectedX = mapX(selectedIndex);
+        const selectedValue = Number.isFinite(selectedPoint.forecast) ? selectedPoint.forecast : selectedPoint.actual;
+        const selectedY = mapY(selectedValue);
+        context.beginPath();
+        context.setLineDash([4, 4]);
+        context.strokeStyle = '#9bb8b0';
+        context.lineWidth = 1;
+        context.moveTo(selectedX, plot.top);
+        context.lineTo(selectedX, plot.bottom);
+        context.stroke();
+        context.setLineDash([]);
+        context.beginPath();
+        context.arc(selectedX, selectedY, 5.2, 0, Math.PI * 2);
+        context.fillStyle = 'rgba(255, 255, 255, 0.98)';
+        context.fill();
+        context.lineWidth = 2.4;
+        context.strokeStyle = Number.isFinite(selectedPoint.forecast) ? '#d97706' : '#0b6b4f';
+        context.stroke();
+      }
+
       const markedIndexes = [];
       if (lastActualIndex >= 0) {
         markedIndexes.push(lastActualIndex);
@@ -711,29 +938,43 @@ Page({
         context.lineWidth = 2;
         context.strokeStyle = index === peakIndex ? '#d97706' : '#0b6b4f';
         context.stroke();
-
-        const label = `${point.label} ${Math.round(value)}`;
-        const textWidth = context.measureText(label).width + 10;
-        const labelX = Math.min(Math.max(x - textWidth / 2, plot.left), plot.right - textWidth);
-        const labelY = Math.max(y - 28, 4);
-        context.fillStyle = 'rgba(255, 255, 255, 0.94)';
-        context.fillRect(labelX, labelY, textWidth, 18);
-        context.strokeStyle = '#cfdbd7';
-        context.lineWidth = 1;
-        context.strokeRect(labelX, labelY, textWidth, 18);
-        context.beginPath();
-        context.moveTo(x, y - 5);
-        context.lineTo(x, labelY + 18);
-        context.strokeStyle = index === peakIndex ? '#d97706' : '#0b6b4f';
-        context.stroke();
-        context.fillStyle = '#33433e';
-        context.textAlign = 'center';
-        context.fillText(label, labelX + textWidth / 2, labelY + 9);
       });
+
+      if (selectedIndex >= 0) {
+        const selectedPoint = points[selectedIndex];
+        const selectedX = mapX(selectedIndex);
+        const selectedValue = Number.isFinite(selectedPoint.forecast) ? selectedPoint.forecast : selectedPoint.actual;
+        const selectedY = mapY(selectedValue);
+        const tooltipLines = [selectedPoint.label || '--'];
+        if (Number.isFinite(selectedPoint.actual)) {
+          tooltipLines.push(`实际 ${Math.round(selectedPoint.actual)}`);
+        }
+        if (Number.isFinite(selectedPoint.forecast)) {
+          tooltipLines.push(`预测 ${Math.round(selectedPoint.forecast)}`);
+        }
+        if (Number.isFinite(selectedPoint.low) && Number.isFinite(selectedPoint.high)) {
+          tooltipLines.push(`区间 ${Math.round(selectedPoint.low)}~${Math.round(selectedPoint.high)}`);
+        }
+        context.font = '10px sans-serif';
+        const tooltipWidth = Math.max.apply(null, tooltipLines.map((line) => context.measureText(line).width)) + 18;
+        const tooltipHeight = 16 + tooltipLines.length * 14;
+        const tooltipX = Math.min(Math.max(selectedX - tooltipWidth / 2, plot.left), plot.right - tooltipWidth);
+        const tooltipY = Math.max(selectedY - tooltipHeight - 12, 2);
+        context.fillStyle = 'rgba(16, 47, 42, 0.96)';
+        context.fillRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
+        context.strokeStyle = 'rgba(183, 225, 210, 0.72)';
+        context.lineWidth = 1;
+        context.strokeRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
+        context.textAlign = 'left';
+        context.fillStyle = '#dff5ed';
+        tooltipLines.forEach((line, lineIndex) => {
+          context.fillText(line, tooltipX + 9, tooltipY + 11 + lineIndex * 14);
+        });
+      }
     });
   },
 
-  drawDistributionChart(distribution) {
+  drawDistributionChart(distribution, activeIndex) {
     if (!distribution.length) {
       return;
     }
@@ -741,36 +982,56 @@ Page({
     this.prepareCanvas('#distributionCanvas', (context, width, height) => {
       const centerX = width / 2;
       const centerY = height / 2;
-      const radius = Math.min(width, height) * 0.34;
+      const radius = Math.min(width, height) * 0.31;
+      const thickness = Math.max(20, radius * 0.42);
+      const selectedIndex = Number.isInteger(activeIndex) ? Math.min(Math.max(activeIndex, -1), distribution.length - 1) : -1;
       let startAngle = -Math.PI / 2;
+      this.distributionLayout = { centerX, centerY, radius, thickness };
 
       context.clearRect(0, 0, width, height);
-      context.lineWidth = Math.max(14, radius * 0.34);
       context.lineCap = 'butt';
+      context.beginPath();
+      context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      context.lineWidth = thickness;
+      context.strokeStyle = '#edf7f3';
+      context.stroke();
 
-      distribution.forEach((item) => {
+      distribution.forEach((item, index) => {
         const angle = (Number(item.value) / 100) * Math.PI * 2;
+        const isActive = index === selectedIndex;
         context.beginPath();
-        context.arc(centerX, centerY, radius, startAngle, startAngle + angle);
+        context.arc(centerX, centerY, radius + (isActive ? 4 : 0), startAngle, startAngle + angle);
+        context.lineWidth = thickness + (isActive ? 4 : 0);
         context.strokeStyle = item.color;
+        context.shadowColor = isActive ? 'rgba(11, 107, 79, 0.26)' : 'rgba(11, 107, 79, 0)';
+        context.shadowBlur = isActive ? 10 : 0;
         context.stroke();
+        context.shadowBlur = 0;
         startAngle += angle;
       });
 
-      context.beginPath();
-      context.arc(centerX, centerY, radius, 0, Math.PI * 2);
-      context.lineWidth = 1;
-      context.strokeStyle = '#edf2f0';
-      context.stroke();
+      let separatorAngle = -Math.PI / 2;
+      distribution.forEach((item) => {
+        const innerRadius = radius - thickness / 2 - 1;
+        const outerRadius = radius + thickness / 2 + 1;
+        context.beginPath();
+        context.moveTo(centerX + Math.cos(separatorAngle) * innerRadius, centerY + Math.sin(separatorAngle) * innerRadius);
+        context.lineTo(centerX + Math.cos(separatorAngle) * outerRadius, centerY + Math.sin(separatorAngle) * outerRadius);
+        context.lineWidth = 2;
+        context.strokeStyle = '#ffffff';
+        context.stroke();
+        separatorAngle += (Number(item.value) / 100) * Math.PI * 2;
+      });
 
-      context.fillStyle = '#17212b';
+      const focus = selectedIndex >= 0 ? distribution[selectedIndex] : null;
       context.textAlign = 'center';
       context.textBaseline = 'middle';
-      context.font = '700 18px sans-serif';
-      context.fillText('100%', centerX, centerY - 7);
+      context.fillStyle = focus ? focus.color : '#17212b';
+      context.font = '700 19px sans-serif';
+      context.fillText(focus ? `${focus.value}%` : '100%', centerX, centerY - 8);
       context.fillStyle = '#7b8b87';
       context.font = '10px sans-serif';
-      context.fillText('来源构成', centerX, centerY + 15);
+      context.fillText(focus ? focus.label : '来源构成', centerX, centerY + 15);
     });
   }
 });
