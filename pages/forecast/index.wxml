@@ -1,10 +1,48 @@
-<view class="page">
+<view class="page forecast-page">
   <view class="page-header">
     <view>
       <view class="page-title">需求预测</view>
-      <view class="page-subtitle">根据历史客流、销售和外部因素生成模拟预测</view>
+      <view class="page-subtitle">导入经营数据，在本地完成可解释预测与情景分析</view>
     </view>
-    <view class="status-chip">可替换 API</view>
+    <view class="status-chip">{{forecast ? forecast.rangeLabel : '准备中'}}</view>
+  </view>
+
+  <view class="card import-card">
+    <view class="card-head" bindtap="togglePanel" data-key="dataExpanded">
+      <view class="card-head-main">
+        <view class="card-title-row">
+          <view class="card-title">数据导入与计算</view>
+          <view class="data-state">{{importSummary}}</view>
+        </view>
+        <view class="card-note">支持 CSV、JSON，可粘贴或选择文件。数据只在本机页面内计算。</view>
+      </view>
+      <view class="expand-link">{{dataExpanded ? '收起' : '展开'}}</view>
+    </view>
+
+    <view wx:if="{{dataExpanded}}" class="card-body import-body">
+      <view class="button-row import-actions">
+        <button class="secondary-button" bindtap="chooseDataFile">选择文件</button>
+        <button class="secondary-button" bindtap="loadSampleToEditor">载入样例</button>
+        <button class="secondary-button" bindtap="restoreSampleData">恢复样例</button>
+      </view>
+
+      <textarea
+        class="data-editor"
+        value="{{importText}}"
+        bindinput="handleImportInput"
+        maxlength="-1"
+        placeholder="date,traffic,sales,staff,stock,members,miniProgram,referral,promo&#10;2026-09-01,742,48600,7,168,176,118,62,0"
+        placeholder-class="editor-placeholder"
+      ></textarea>
+
+      <view class="import-footer">
+        <view class="import-message {{importMessage ? 'import-message-active' : ''}}">{{importMessage || '可直接导入现有 POS、客流或人工统计数据。'}}</view>
+        <view class="button-row import-submit">
+          <button class="secondary-button compact-button" bindtap="clearImportEditor">清空</button>
+          <button class="primary-button compact-button" bindtap="importFromEditor">导入并计算</button>
+        </view>
+      </view>
+    </view>
   </view>
 
   <view class="segmented">
@@ -17,30 +55,142 @@
     >{{item.label}}</view>
   </view>
 
-  <view wx:if="{{loading}}" class="card empty-state">正在计算预测...</view>
+  <view wx:if="{{loading || calculating}}" class="card empty-state">
+    {{loading ? '正在载入经营数据...' : '正在重新计算结果...'}}
+  </view>
 
   <block wx:else>
     <view class="card forecast-summary">
-      <view class="summary-kicker">{{forecast.rangeLabel}}预测</view>
-      <view class="summary-number">{{forecast.predictedTraffic}}<text class="metric-unit">人次</text></view>
-      <view class="summary-detail">{{forecast.changeText}} · 置信度 {{forecast.confidence}}%</view>
-      <view class="summary-split">
-        <view>
-          <view class="metric-label">预计销售额</view>
-          <view class="summary-small">¥{{forecast.predictedSales}}</view>
+      <view class="summary-head" bindtap="togglePanel" data-key="summaryExpanded">
+        <view class="summary-title-row">
+          <view class="summary-kicker">{{forecast.rangeLabel}}预测</view>
+          <view class="summary-expand">{{summaryExpanded ? '收起依据' : '打开依据'}}</view>
         </view>
+        <view class="summary-number">{{forecast.predictedTraffic}}<text class="metric-unit">人次</text></view>
+        <view class="summary-detail">{{forecast.changeText}} · 置信度 {{forecast.confidence}}%</view>
+        <view class="summary-split">
+          <view>
+            <view class="metric-label">预计销售额</view>
+            <view class="summary-small">¥{{forecast.predictedSales}}</view>
+          </view>
+          <view>
+            <view class="metric-label">预测峰值</view>
+            <view class="summary-small">{{forecast.peakLabel}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{summaryExpanded}}" class="card explain-card">
+      <view class="sub-title">为何得到此结果</view>
+      <view class="reason-text">{{forecast.reasonSummary}}</view>
+
+      <view class="metric-grid compact-grid">
+        <view class="metric-card quiet-card">
+          <view class="metric-label">预测方法</view>
+          <view class="metric-note">{{forecast.method}}</view>
+        </view>
+        <view class="metric-card quiet-card">
+          <view class="metric-label">最佳回测 MAPE</view>
+          <view class="metric-value small-value">{{forecast.bestMape}}</view>
+        </view>
+        <view class="metric-card quiet-card">
+          <view class="metric-label">情景倍率</view>
+          <view class="metric-value small-value">{{forecast.scenarioMultiplier}}x</view>
+        </view>
+        <view class="metric-card quiet-card">
+          <view class="metric-label">历史波动</view>
+          <view class="metric-value small-value">{{forecast.volatility}}</view>
+        </view>
+      </view>
+
+      <view class="sub-title table-title">预测明细</view>
+      <scroll-view scroll-x class="data-table-wrap">
+        <view class="data-table">
+          <view class="data-row data-head">
+            <view class="data-cell wide-cell">日期</view>
+            <view class="data-cell">类型</view>
+            <view class="data-cell">客流</view>
+            <view class="data-cell">销售额</view>
+            <view class="data-cell wide-cell">说明</view>
+          </view>
+          <view class="data-row" wx:for="{{forecast.tableRows}}" wx:key="period">
+            <view class="data-cell wide-cell">{{item.period}}</view>
+            <view class="data-cell"><text class="table-type {{item.typeClass}}">{{item.type}}</text></view>
+            <view class="data-cell">{{item.traffic}}</view>
+            <view class="data-cell">{{item.sales}}</view>
+            <view class="data-cell wide-cell">{{item.detail}}</view>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view class="sub-title table-title">建议动作</view>
+      <view class="recommendation" wx:for="{{forecast.recommendations}}" wx:key="title">
+        <view class="recommendation-top">
+          <view class="recommendation-title">{{item.title}}</view>
+          <view class="priority {{item.priority === '高' ? 'priority-high' : 'priority-medium'}}">{{item.priority}}</view>
+        </view>
+        <view class="recommendation-action">{{item.action}}</view>
+        <view class="recommendation-reason">{{item.reason}}</view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-heading">
         <view>
-          <view class="metric-label">高峰时段</view>
-          <view class="summary-small">{{forecast.peakLabel}}</view>
+          <view class="section-title">预测走势与置信区间</view>
+          <view class="section-note">实线为实际客流，虚线为预测，细线为高低区间。</view>
+        </view>
+        <view class="chart-legend">
+          <text class="legend-dot actual-dot"></text>实际
+          <text class="legend-dot forecast-dot"></text>预测
+        </view>
+      </view>
+      <view class="card chart-card">
+        <canvas type="2d" id="trendCanvas" class="trend-canvas"></canvas>
+        <view class="chart-stat-row">
+          <view class="chart-stat">
+            <view class="chart-stat-label">近期均值</view>
+            <view class="chart-stat-value">{{forecast.averageTraffic}}</view>
+          </view>
+          <view class="chart-stat">
+            <view class="chart-stat-label">最新实际</view>
+            <view class="chart-stat-value">{{forecast.lastTraffic}}</view>
+          </view>
+          <view class="chart-stat">
+            <view class="chart-stat-label">峰值客流</view>
+            <view class="chart-stat-value">{{forecast.peakTraffic}}</view>
+          </view>
         </view>
       </view>
     </view>
 
     <view class="section">
       <view class="section-title">客流分布</view>
-      <view class="card chart-card">
+      <view class="section-note">结合会员、小程序和转介绍数据计算来源占比，保留原有绿色配色。</view>
+      <view class="card distribution-card">
+        <view class="distribution-layout">
+          <canvas type="2d" id="distributionCanvas" class="distribution-canvas"></canvas>
+          <view class="distribution-legend">
+            <view class="legend-row" wx:for="{{forecast.distribution}}" wx:key="label">
+              <view class="legend-name"><text class="legend-color" style="background: {{item.color}};"></text>{{item.label}}</view>
+              <view class="legend-value">{{item.value}}%</view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="card chart-card bar-card">
+        <view class="chart-head">
+          <view>
+            <view class="sub-title">逐日客流柱状图</view>
+            <view class="card-note">柱顶标记预测客流量，避免只显示相对高度。</view>
+          </view>
+          <view class="mini-chip">{{forecast.rangeDays}} 天</view>
+        </view>
         <view class="bar-chart">
           <view class="bar-column" wx:for="{{forecast.bars}}" wx:key="label">
+            <view class="bar-value">{{item.trafficText}}</view>
             <view class="bar-track">
               <view class="bar-fill" style="height: {{item.value}}%;"></view>
             </view>
@@ -51,13 +201,127 @@
     </view>
 
     <view class="section">
-      <view class="section-title">主要影响因素</view>
-      <view class="card">
-        <view class="factor" wx:for="{{forecast.drivers}}" wx:key="*this">
-          <view class="factor-index">{{index + 1}}</view>
-          <view class="factor-text">{{item}}</view>
+      <view class="card driver-board">
+        <view class="card-head" bindtap="togglePanel" data-key="driversExpanded">
+          <view class="card-head-main">
+            <view class="card-title">主要影响因素</view>
+            <view class="card-note">趋势、波动、客单价、活动、情景与模型置信度已合并分析。</view>
+          </view>
+          <view class="expand-link">{{driversExpanded ? '收起' : '打开'}}</view>
+        </view>
+
+        <view class="driver-preview">
+          <view class="driver-preview-item" wx:for="{{forecast.topDrivers}}" wx:key="title">
+            <view class="driver-preview-top">
+              <view class="driver-name">{{item.title}}</view>
+              <view class="driver-impact">{{item.impact}}</view>
+            </view>
+            <view class="strength-track">
+              <view class="strength-fill {{item.strengthClass}}" style="width: {{item.strengthPercent}}%;"></view>
+            </view>
+          </view>
+        </view>
+
+        <view wx:if="{{driversExpanded}}" class="driver-detail">
+          <view class="factor" wx:for="{{forecast.drivers}}" wx:key="title">
+            <view class="factor-head">
+              <view class="factor-index">{{index + 1}}</view>
+              <view class="factor-text">{{item.title}}</view>
+              <view class="factor-impact">{{item.impact}}</view>
+            </view>
+            <view class="strength-row">
+              <view class="strength-track">
+                <view class="strength-fill {{item.strengthClass}}" style="width: {{item.strengthPercent}}%;"></view>
+              </view>
+              <view class="factor-direction">{{item.direction}} · {{item.strength}}</view>
+            </view>
+            <view class="factor-reason">{{item.reason}}</view>
+          </view>
+
+          <view class="board-divider"></view>
+          <view class="sub-title">模型回测对比</view>
+          <view class="comparison-row" wx:for="{{forecast.modelComparison}}" wx:key="name">
+            <view class="comparison-name">{{item.rank}}. {{item.name}}</view>
+            <view class="comparison-bar">
+              <view class="comparison-fill" style="width: {{item.mape > 20 ? 100 : item.mape * 5}}%;"></view>
+            </view>
+            <view class="comparison-value">MAPE {{item.mapeText}}</view>
+            <view wx:if="{{item.recommended}}" class="mini-chip recommended-chip">当前最优</view>
+          </view>
+
+          <view class="board-divider"></view>
+          <view class="data-quality">
+            <view class="quality-score">
+              <view class="quality-value">{{forecast.dataQuality.score}}</view>
+              <view class="quality-label">{{forecast.qualityGrade}}</view>
+            </view>
+            <view class="quality-main">
+              <view class="sub-title">数据质量与异常检测</view>
+              <view class="quality-grid">
+                <view>有效样本 {{forecast.dataQuality.rows}} 天</view>
+                <view>完整性 {{forecast.dataQuality.completeness}}%</view>
+                <view>异常值 {{forecast.dataQuality.outliers}} 条</view>
+                <view>范围 {{forecast.dataQuality.range}}</view>
+              </view>
+            </view>
+          </view>
         </view>
       </view>
     </view>
+
+    <view class="section">
+      <view class="card model-board">
+        <view class="card-head" bindtap="togglePanel" data-key="modelExpanded">
+          <view class="card-head-main">
+            <view class="card-title">分析与模型设置</view>
+            <view class="card-note">默认免费本地模型，也可接入用户自己的兼容接口。</view>
+          </view>
+          <view class="expand-link">{{modelExpanded ? '收起' : '设置'}}</view>
+        </view>
+
+        <view wx:if="{{modelExpanded}}" class="model-body">
+          <view class="model-mode">
+            <view class="model-tab {{modelMode === 'builtin' ? 'model-tab-active' : ''}}" data-mode="builtin" bindtap="selectModelMode">免费本地模型</view>
+            <view class="model-tab {{modelMode === 'custom' ? 'model-tab-active' : ''}}" data-mode="custom" bindtap="selectModelMode">自有模型 API</view>
+          </view>
+
+          <view wx:if="{{modelMode === 'builtin'}}" class="model-panel">
+            <view class="model-feature">无需密钥，可解释统计预测，支持导入后即时计算。</view>
+            <view class="model-feature">内置加权移动平均、线性趋势、星期因子、回测与置信区间。</view>
+            <view class="model-feature">自定义模型只用于补充文字分析，不改变已计算的数值结果。</view>
+          </view>
+
+          <view wx:else class="model-panel">
+            <view class="field-label">兼容接口地址</view>
+            <input class="model-input" value="{{apiUrl}}" bindinput="handleApiUrlInput" placeholder="https://example.com/v1/chat/completions" />
+            <view class="field-label">模型名称</view>
+            <input class="model-input" value="{{modelName}}" bindinput="handleModelNameInput" placeholder="例如 qwen-plus" />
+            <view class="field-label">API Key（仅本次运行，不写入仓库）</view>
+            <input class="model-input" password value="{{apiKey}}" bindinput="handleApiKeyInput" placeholder="仅发送到填写的接口" />
+            <view class="button-row">
+              <button class="secondary-button compact-button" bindtap="saveModelSettings">保存非敏感设置</button>
+              <button class="primary-button compact-button" bindtap="runCustomAnalysis">生成模型分析</button>
+            </view>
+            <view wx:if="{{customStatus}}" class="api-status">{{customStatus}}</view>
+            <view wx:if="{{customError}}" class="api-error">{{customError}}</view>
+            <view wx:if="{{customAnalysis}}" class="custom-analysis">{{customAnalysis}}</view>
+          </view>
+
+          <view class="scenario-panel">
+            <view class="scenario-head">
+              <view>
+                <view class="field-label">情景模拟倍率</view>
+                <view class="card-note">用于模拟促销、活动或短期经营变化对客流的影响。</view>
+              </view>
+              <view class="scenario-value">{{scenarioText}}</view>
+            </view>
+            <slider min="0.7" max="1.5" step="0.05" value="{{scenarioMultiplier}}" activeColor="#0b6b4f" backgroundColor="#d9e5e1" block-color="#0b6b4f" bindchange="handleScenarioChange" />
+            <view class="scenario-scale"><text>0.70x</text><text>1.00x</text><text>1.50x</text></view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="page-footnote">预测结果来自历史数据统计，不构成经营保证；上线生产时建议将模型接口放入云函数。</view>
   </block>
 </view>

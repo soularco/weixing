@@ -1,4 +1,5 @@
 const mock = require('../data/mock');
+const forecastData = require('../data/forecast-data');
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -19,6 +20,18 @@ function getForecast(range) {
   return mockResponse(selected);
 }
 
+function getForecastHistory() {
+  return mockResponse({
+    rows: forecastData.forecastHistory,
+    meta: {
+      sourceType: '内置示例',
+      rawCount: forecastData.forecastHistory.length,
+      validCount: forecastData.forecastHistory.length,
+      invalidCount: 0
+    }
+  });
+}
+
 function getSchedule() {
   return mockResponse(mock.schedule);
 }
@@ -30,6 +43,7 @@ function getReplenishItems() {
 module.exports = {
   getDashboard,
   getForecast,
+  getForecastHistory,
   getSchedule,
   getReplenishItems
 };
