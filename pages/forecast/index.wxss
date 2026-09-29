@@ -1,0 +1,153 @@
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8rpx;
+  padding: 8rpx;
+  border: 1rpx solid #e2e7ec;
+  border-radius: 8rpx;
+  background: #ffffff;
+}
+
+.segment {
+  min-height: 64rpx;
+  border-radius: 6rpx;
+  color: #667085;
+  font-size: 24rpx;
+  line-height: 64rpx;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.segment-active {
+  background: #0b6b4f;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.forecast-summary {
+  margin-top: 24rpx;
+  background: #102f2a;
+  border-color: #102f2a;
+  color: #ffffff;
+}
+
+.summary-kicker {
+  color: #b7e1d2;
+  font-size: 24rpx;
+}
+
+.summary-number {
+  margin-top: 8rpx;
+  font-size: 64rpx;
+  line-height: 1.15;
+  font-weight: 750;
+}
+
+.summary-detail {
+  margin-top: 8rpx;
+  color: #d8e9e4;
+  font-size: 23rpx;
+}
+
+.summary-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20rpx;
+  margin-top: 28rpx;
+  padding-top: 22rpx;
+  border-top: 1rpx solid rgba(255, 255, 255, 0.18);
+}
+
+.summary-split .metric-label {
+  color: #b7e1d2;
+}
+
+.summary-small {
+  margin-top: 6rpx;
+  font-size: 28rpx;
+  font-weight: 650;
+}
+
+.chart-card {
+  padding-top: 30rpx;
+}
+
+.bar-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 12rpx;
+  height: 260rpx;
+}
+
+.bar-column {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.bar-track {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  height: 210rpx;
+  overflow: hidden;
+  border-radius: 6rpx 6rpx 0 0;
+  background: #edf7f3;
+}
+
+.bar-fill {
+  width: 100%;
+  min-height: 10rpx;
+  border-radius: 6rpx 6rpx 0 0;
+  background: #16896a;
+}
+
+.bar-label {
+  margin-top: 10rpx;
+  color: #667085;
+  font-size: 20rpx;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.factor {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid #edf0f3;
+}
+
+.factor:first-child {
+  padding-top: 0;
+}
+
+.factor:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.factor-index {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 42rpx;
+  height: 42rpx;
+  border-radius: 50%;
+  background: #eaf8f3;
+  color: #0b6b4f;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.factor-text {
+  flex: 1;
+  color: #344054;
+  font-size: 25rpx;
+  line-height: 1.55;
+}

@@ -1,0 +1,49 @@
+<view class="page">
+  <view class="page-header">
+    <view>
+      <view class="page-title">智能排班</view>
+      <view class="page-subtitle">{{schedule.dateLabel || '--'}} · 结合客流与岗位技能生成建议</view>
+    </view>
+    <view class="status-chip {{generated ? 'chip-ready' : ''}}">{{generated ? '已生成' : '待确认'}}</view>
+  </view>
+
+  <view wx:if="{{loading}}" class="card empty-state">正在准备排班数据...</view>
+
+  <block wx:else>
+    <view class="coverage-grid">
+      <view class="coverage-card" wx:for="{{schedule.coverage}}" wx:key="label">
+        <view class="metric-label">{{item.label}}</view>
+        <view class="coverage-value">{{item.value}}</view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">班次建议</view>
+      <view class="card">
+        <view class="shift-row" wx:for="{{schedule.shifts}}" wx:key="id">
+          <view class="shift-time">{{item.time}}</view>
+          <view class="shift-main">
+            <view class="list-title">{{item.name}} · {{item.people}} 人</view>
+            <view class="list-desc">{{item.focus}}</view>
+          </view>
+          <view class="tag tag-low">建议</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">需要关注</view>
+      <view class="card">
+        <view class="risk-line" wx:for="{{schedule.risks}}" wx:key="*this">
+          <view class="risk-dot"></view>
+          <view class="risk-text">{{item}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="button-row">
+      <button class="secondary-button" bindtap="loadSchedule">重新计算</button>
+      <button class="primary-button" bindtap="generateSchedule">生成排班建议</button>
+    </view>
+  </block>
+</view>

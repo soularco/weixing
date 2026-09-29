@@ -1,0 +1,45 @@
+<view class="page">
+  <view class="page-header">
+    <view>
+      <view class="page-title">经营决策台</view>
+      <view class="page-subtitle">{{dashboard.storeName || '示范门店'}} · 更新于 {{dashboard.updatedAt || '--'}}</view>
+    </view>
+    <view class="status-chip">模拟数据</view>
+  </view>
+
+  <view wx:if="{{loading}}" class="card empty-state">正在加载经营数据...</view>
+
+  <block wx:else>
+    <view class="metric-grid">
+      <view class="metric-card" wx:for="{{dashboard.metrics}}" wx:key="label">
+        <view class="metric-label">{{item.label}}</view>
+        <view class="metric-value">{{item.value}}<text class="metric-unit">{{item.unit}}</text></view>
+        <view class="metric-detail">{{item.detail}}</view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">今日优先动作</view>
+      <view class="card">
+        <view class="list-row" wx:for="{{dashboard.actions}}" wx:key="title">
+          <view class="list-main">
+            <view class="list-title">{{item.title}}</view>
+            <view class="list-desc">{{item.desc}}</view>
+          </view>
+          <view class="tag {{item.level === '高' ? 'tag-high' : 'tag-medium'}}">{{item.level}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">快速进入</view>
+      <view class="button-row">
+        <button class="secondary-button" bindtap="openForecast">需求预测</button>
+        <button class="secondary-button" bindtap="openSchedule">排班建议</button>
+      </view>
+      <view class="button-row">
+        <button class="primary-button" bindtap="openReplenish">查看补货清单</button>
+      </view>
+    </view>
+  </block>
+</view>

@@ -1,0 +1,42 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/forecast/index",
+    "pages/schedule/index",
+    "pages/replenish/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "AI 门店运营助手",
+    "navigationBarBackgroundColor": "#0b6b4f",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f4f6f8",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#667085",
+    "selectedColor": "#0b6b4f",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "总览"
+      },
+      {
+        "pagePath": "pages/forecast/index",
+        "text": "预测"
+      },
+      {
+        "pagePath": "pages/schedule/index",
+        "text": "排班"
+      },
+      {
+        "pagePath": "pages/replenish/index",
+        "text": "补货"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

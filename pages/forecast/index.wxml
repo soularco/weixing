@@ -1,0 +1,63 @@
+<view class="page">
+  <view class="page-header">
+    <view>
+      <view class="page-title">需求预测</view>
+      <view class="page-subtitle">根据历史客流、销售和外部因素生成模拟预测</view>
+    </view>
+    <view class="status-chip">可替换 API</view>
+  </view>
+
+  <view class="segmented">
+    <view
+      wx:for="{{rangeOptions}}"
+      wx:key="value"
+      class="segment {{range === item.value ? 'segment-active' : ''}}"
+      data-range="{{item.value}}"
+      bindtap="selectRange"
+    >{{item.label}}</view>
+  </view>
+
+  <view wx:if="{{loading}}" class="card empty-state">正在计算预测...</view>
+
+  <block wx:else>
+    <view class="card forecast-summary">
+      <view class="summary-kicker">{{forecast.rangeLabel}}预测</view>
+      <view class="summary-number">{{forecast.predictedTraffic}}<text class="metric-unit">人次</text></view>
+      <view class="summary-detail">{{forecast.changeText}} · 置信度 {{forecast.confidence}}%</view>
+      <view class="summary-split">
+        <view>
+          <view class="metric-label">预计销售额</view>
+          <view class="summary-small">¥{{forecast.predictedSales}}</view>
+        </view>
+        <view>
+          <view class="metric-label">高峰时段</view>
+          <view class="summary-small">{{forecast.peakLabel}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">客流分布</view>
+      <view class="card chart-card">
+        <view class="bar-chart">
+          <view class="bar-column" wx:for="{{forecast.bars}}" wx:key="label">
+            <view class="bar-track">
+              <view class="bar-fill" style="height: {{item.value}}%;"></view>
+            </view>
+            <view class="bar-label">{{item.label}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">主要影响因素</view>
+      <view class="card">
+        <view class="factor" wx:for="{{forecast.drivers}}" wx:key="*this">
+          <view class="factor-index">{{index + 1}}</view>
+          <view class="factor-text">{{item}}</view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>
