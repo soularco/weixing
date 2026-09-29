@@ -11,6 +11,21 @@
 
   <block wx:else>
     <view class="coverage-grid">
+    <view wx:if="{{linkedForecast}}" class="card linked-card">
+      <view class="linked-card-head">
+        <view>
+          <view class="card-title">已联动预测结果</view>
+          <view class="card-note">{{linkedForecast.rangeLabel}} · {{linkedForecast.method}}</view>
+        </view>
+        <view class="data-state">首日 {{linkedForecast.predictedTrafficFirstDayValue}} 人次</view>
+      </view>
+      <view class="linked-metrics">
+        <view><view class="metric-label">预计销售额</view><view class="linked-value">¥{{linkedForecast.predictedSalesFirstDayValue}}</view></view>
+        <view><view class="metric-label">置信度</view><view class="linked-value">{{linkedForecast.confidence}}%</view></view>
+        <view><view class="metric-label">位置因子</view><view class="linked-value">{{linkedForecast.locationFactor}}</view></view>
+      </view>
+    </view>
+
       <view class="coverage-card" wx:for="{{schedule.coverage}}" wx:key="label">
         <view class="metric-label">{{item.label}}</view>
         <view class="coverage-value">{{item.value}}</view>

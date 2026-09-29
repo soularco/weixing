@@ -1,4 +1,31 @@
 .chip-ready {
+.linked-card {
+  margin-bottom: 18rpx;
+}
+
+.linked-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.linked-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12rpx;
+  margin-top: 20rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid #edf0f3;
+}
+
+.linked-value {
+  margin-top: 8rpx;
+  color: #0b6b4f;
+  font-size: 27rpx;
+  font-weight: 700;
+}
+
   border-color: #9bd8c3;
   background: #dff5ed;
 }

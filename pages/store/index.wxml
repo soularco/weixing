@@ -1,0 +1,123 @@
+<view class="page store-page">
+  <view class="page-header">
+    <view>
+      <view class="page-title">门店与地图</view>
+      <view class="page-subtitle">选择门店位置，读取周边店铺数据并写入预测上下文</view>
+    </view>
+    <view class="status-chip">{{context ? context.competitionLevel + '竞争' : '待定位'}}</view>
+  </view>
+
+  <view class="card location-actions">
+    <view class="button-row">
+      <button class="primary-button" bindtap="locateCurrentStore" loading="{{locating}}">定位当前门店</button>
+      <button class="secondary-button" bindtap="chooseStoreLocation">地图选点</button>
+    </view>
+    <view class="location-status">{{statusMessage}}</view>
+  </view>
+
+  <view class="map-card">
+    <map
+      id="storeMap"
+      class="store-map"
+      latitude="{{mapCenter.latitude}}"
+      longitude="{{mapCenter.longitude}}"
+      scale="{{mapScale}}"
+      markers="{{markers}}"
+      circles="{{circles}}"
+      show-location="{{true}}"
+      bindmarkertap="handleMarkerTap"
+    ></map>
+    <view class="map-caption">{{selectedStore.name || '未选择门店'}} · 半径 1 公里范围</view>
+  </view>
+
+  <view class="card context-summary" wx:if="{{context}}">
+    <view class="context-summary-head">
+      <view>
+        <view class="card-title">{{selectedStore.name}}</view>
+        <view class="card-note">{{selectedStore.address}}</view>
+      </view>
+      <view class="data-state">位置因子 {{context.locationFactor}}</view>
+    </view>
+    <view class="metric-grid compact-grid">
+      <view class="metric-card quiet-card">
+        <view class="metric-label">周边 500 米</view>
+        <view class="metric-value small-value">{{context.within500m}} 家</view>
+      </view>
+      <view class="metric-card quiet-card">
+        <view class="metric-label">周边 1 公里</view>
+        <view class="metric-value small-value">{{context.within1km}} 家</view>
+      </view>
+      <view class="metric-card quiet-card">
+        <view class="metric-label">同类别店铺</view>
+        <view class="metric-value small-value">{{context.sameCategoryCount}} 家</view>
+      </view>
+      <view class="metric-card quiet-card">
+        <view class="metric-label">竞争指数</view>
+        <view class="metric-value small-value">{{context.competitionIndex}}</view>
+      </view>
+    </view>
+    <view class="context-reason">{{context.reasoning}}</view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">快速切换门店</view>
+    <scroll-view scroll-x class="store-strip">
+      <view
+        class="store-option {{selectedStoreId === item.id ? 'store-option-active' : ''}}"
+        wx:for="{{sampleStores}}"
+        wx:key="id"
+        data-id="{{item.id}}"
+        bindtap="selectStore"
+      >
+        <view class="store-option-name">{{item.name}}</view>
+        <view class="store-option-meta">{{item.area}}</view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">周边数据来源</view>
+    <view class="card search-card">
+      <view class="field-label">腾讯地图 WebService Key（仅本次运行）</view>
+      <input class="model-input" value="{{mapKey}}" bindinput="handleMapKeyInput" password placeholder="不填写时使用手工参数" />
+      <view class="field-label">搜索关键词</view>
+      <input class="model-input" value="{{mapKeyword}}" bindinput="handleKeywordInput" placeholder="例如 便利店、餐饮" />
+      <view class="field-label">搜索半径（米）</view>
+      <input class="model-input" type="number" value="{{mapRadius}}" bindinput="handleRadiusInput" placeholder="1000" />
+      <view class="button-row">
+        <button class="secondary-button compact-button" bindtap="searchNearby" loading="{{searching}}">搜索周边店铺</button>
+        <button class="primary-button compact-button" bindtap="openForecast">回到预测</button>
+      </view>
+      <view class="search-note">生产环境需在微信公众平台配置 `apis.map.qq.com` 为 request 合法域名；Key 不会写入 Git。</view>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="section-title">手工周边参数</view>
+    <view class="section-note">未配置地图 Key 时，可直接录入周边店铺数量、平均客流和类别，预测仍会计算位置因子。</view>
+    <view class="card manual-card">
+      <view class="field-label">周边店铺数量</view>
+      <input class="model-input" type="number" value="{{manualCount}}" bindinput="handleManualCountInput" placeholder="4" />
+      <view class="field-label">周边平均客流</view>
+      <input class="model-input" type="number" value="{{manualAverageTraffic}}" bindinput="handleManualTrafficInput" placeholder="650" />
+      <view class="field-label">对手类别</view>
+      <input class="model-input" value="{{manualCategory}}" bindinput="handleManualCategoryInput" placeholder="便利店" />
+      <button class="primary-button compact-button manual-submit" bindtap="applyManualContext">应用手工参数</button>
+    </view>
+  </view>
+
+  <view class="section" wx:if="{{nearbyStores.length}}">
+    <view class="section-title">已识别周边店铺</view>
+    <view class="card nearby-card">
+      <view class="nearby-row" wx:for="{{nearbyStores}}" wx:key="id">
+        <view class="nearby-main">
+          <view class="list-title">{{item.name}}</view>
+          <view class="list-desc">{{item.category}} · {{item.distance}} km · 平均客流 {{item.averageTraffic}}</view>
+        </view>
+        <view class="tag tag-low">{{item.rating}} 分</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="page-footnote">地图定位仅用于生成门店环境因子；未配置第三方地图 Key 时，手工参数仍然可用。</view>
+</view>

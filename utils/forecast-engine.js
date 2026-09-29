@@ -8,7 +8,9 @@ const FIELD_ALIASES = {
   miniProgram: ['miniprogram', 'mini', '小程序', '小程序客流'],
   referral: ['referral', '转介绍', '推荐客流', '推荐'],
   promo: ['promo', '促销', '活动', '促销标记'],
-  weather: ['weather', '天气']
+  weather: ['weather', '天气'],
+  holiday: ['holiday', '节假日', '节日', '假日'],
+  localEvent: ['localevent', 'local_event', '本地活动', '商圈活动', '周边活动']
 };
 
 const DEFAULT_DISTRIBUTION = [
@@ -195,7 +197,9 @@ function normalizeRows(rawRows) {
       miniProgram: Number.isFinite(parseNumber(mapped.miniProgram)) ? parseNumber(mapped.miniProgram) : null,
       referral: Number.isFinite(parseNumber(mapped.referral)) ? parseNumber(mapped.referral) : null,
       promo: parseFlag(mapped.promo),
-      weather: mapped.weather ? String(mapped.weather).trim() : ''
+      weather: mapped.weather ? String(mapped.weather).trim() : '',
+      holiday: parseFlag(mapped.holiday),
+      localEvent: parseFlag(mapped.localEvent)
     });
   });
 
@@ -256,7 +260,7 @@ function parseImportText(text) {
 }
 
 function rowsToCsv(rows) {
-  const headers = ['date', 'traffic', 'sales', 'staff', 'stock', 'members', 'miniProgram', 'referral', 'promo'];
+  const headers = ['date', 'traffic', 'sales', 'staff', 'stock', 'members', 'miniProgram', 'referral', 'promo', 'weather', 'holiday', 'localEvent'];
   const lines = [headers.join(',')];
 
   rows.forEach((row) => {
@@ -270,6 +274,9 @@ function rowsToCsv(rows) {
       row.miniProgram === null || row.miniProgram === undefined ? '' : row.miniProgram,
       row.referral === null || row.referral === undefined ? '' : row.referral,
       row.promo ? 1 : 0
+      ,row.weather || ''
+      ,row.holiday ? 1 : 0
+      ,row.localEvent ? 1 : 0
     ].join(','));
   });
 
@@ -344,31 +351,111 @@ function calculateMape(actualValues, predictedValues) {
   return (total / pairs.length) * 100;
 }
 
+function exponentialSmoothing(values, alpha) {
+  if (!values.length) {
+    return 0;
+  }
+  let level = values[0];
+  values.slice(1).forEach((value) => {
+    level = alpha * value + (1 - alpha) * level;
+  });
+  return level;
+}
+
+function holtWintersForecast(values, weekdayIndex, step) {
+  if (values.length < 14) {
+    return exponentialSmoothing(values, 0.35);
+  }
+
+  const seasonLength = 7;
+  const alpha = 0.38;
+  const beta = 0.18;
+  const gamma = 0.22;
+  let level = mean(values.slice(0, seasonLength));
+  let trend = (mean(values.slice(seasonLength, seasonLength * 2)) - level) / seasonLength;
+  const seasonal = Array(7).fill(0);
+
+  for (let index = 0; index < seasonLength; index += 1) {
+    seasonal[index] = values[index] - level;
+  }
+
+  for (let index = seasonLength; index < values.length; index += 1) {
+    const seasonIndex = index % seasonLength;
+    const seasonalValue = seasonal[seasonIndex];
+    const previousLevel = level;
+    level = alpha * (values[index] - seasonalValue) + (1 - alpha) * (level + trend);
+    trend = beta * (level - previousLevel) + (1 - beta) * trend;
+    seasonal[seasonIndex] = gamma * (values[index] - level) + (1 - gamma) * seasonalValue;
+  }
+
+  const targetWeekday = Number.isFinite(weekdayIndex)
+    ? ((Math.round(weekdayIndex) % seasonLength) + seasonLength) % seasonLength
+    : values.length % seasonLength;
+  const result = level + trend * Math.max(step, 1) + seasonal[targetWeekday];
+  return Number.isFinite(result) ? Math.max(result, 0) : exponentialSmoothing(values, 0.35);
+}
+
+function getWeekdayIndex(row, fallback) {
+  const date = parseDate(row && row.date);
+  return date ? date.getDay() : fallback;
+}
+
+function predictOneStep(values, algorithm, weekdayIndex, step) {
+  if (!values.length) {
+    return 0;
+  }
+
+  const selectedStep = Math.max(Number(step) || 1, 1);
+  if (algorithm === 'naive') {
+    return values[values.length - 1];
+  }
+  if (algorithm === 'moving') {
+    return mean(values.slice(-3));
+  }
+  if (algorithm === 'exponential') {
+    return exponentialSmoothing(values, 0.35) * (1 + (selectedStep - 1) * 0.08);
+  }
+  if (algorithm === 'holtWinters') {
+    return holtWintersForecast(values, weekdayIndex, selectedStep);
+  }
+
+  const regression = linearRegression(values);
+  const trendValue = regression.intercept + regression.slope * (values.length + selectedStep - 1);
+  const weightedValue = weightedAverage(values);
+  return weightedValue * 0.5 + trendValue * 0.35 + values[values.length - 1] * 0.15;
+}
+
 function buildModelComparison(rows) {
+  const algorithms = [
+    { key: 'naive', name: '最近值法' },
+    { key: 'moving', name: '3 日移动平均' },
+    { key: 'trend', name: '线性趋势' },
+    { key: 'exponential', name: '指数平滑' },
+    { key: 'holtWinters', name: '周周期 Holt-Winters' }
+  ];
   const actual = [];
-  const naive = [];
-  const moving = [];
-  const trend = [];
+  const predictions = algorithms.reduce((result, algorithm) => {
+    result[algorithm.key] = [];
+    return result;
+  }, {});
 
   rows.forEach((row, index) => {
     if (index < 3) {
       return;
     }
 
-    const priorRows = rows.slice(0, index);
-    const priorValues = priorRows.map((item) => item.traffic);
-    const regression = linearRegression(priorValues);
+    const priorValues = rows.slice(0, index).map((item) => item.traffic);
     actual.push(row.traffic);
-    naive.push(priorValues[priorValues.length - 1]);
-    moving.push(mean(priorValues.slice(-3)));
-    trend.push(regression.intercept + regression.slope * priorValues.length);
+    algorithms.forEach((algorithm) => {
+      predictions[algorithm.key].push(predictOneStep(priorValues, algorithm.key, getWeekdayIndex(row, index), 1));
+    });
   });
 
-  const comparison = [
-    { name: '最近值法', mape: calculateMape(actual, naive) },
-    { name: '3 日移动平均', mape: calculateMape(actual, moving) },
-    { name: '线性趋势', mape: calculateMape(actual, trend) }
-  ].filter((item) => item.mape !== null);
+  const comparison = algorithms.map((algorithm) => ({
+    key: algorithm.key,
+    name: algorithm.name,
+    mape: calculateMape(actual, predictions[algorithm.key])
+  })).filter((item) => item.mape !== null);
 
   return comparison
     .sort((left, right) => left.mape - right.mape)
@@ -485,10 +572,68 @@ function buildDataQuality(rows) {
   };
 }
 
-function buildDrivers(rows, confidence, scenarioMultiplier) {
+function buildExternalDrivers(externalFactors, storeContext) {
+  const settings = externalFactors || {};
+  const factors = [];
+
+  if (storeContext) {
+    factors.push({
+      title: '地理位置与周边竞争',
+      impact: formatPercent(storeContext.locationImpact || 0),
+      direction: (storeContext.locationImpact || 0) >= 0 ? '位置加成' : '竞争抑制',
+      strength: Math.abs(storeContext.locationImpact || 0) >= 5 ? '高' : '中',
+      reason: storeContext.reasoning || '已将门店位置和周边店铺数量计入预测。'
+    });
+  }
+
+  if (settings.weather) {
+    const weatherMap = { '晴': 1.05, '多云': 1.02, '阴': 0.99, '小雨': 0.94, '中雨': 0.9, '大雨': 0.84, '高温': 0.93, '雪': 0.8 };
+    const weatherFactor = weatherMap[settings.weather] || 1;
+    factors.push({
+      title: '天气因素',
+      impact: `${round((weatherFactor - 1) * 100, 1)}%`,
+      direction: weatherFactor >= 1 ? '到店提升' : '出行抑制',
+      strength: Math.abs(weatherFactor - 1) >= 0.06 ? '高' : '中',
+      reason: `用户选择“${settings.weather}”，按天气经验系数调整到店客流。`
+    });
+  }
+
+  if (settings.holiday) {
+    factors.push({
+      title: '节假日因素',
+      impact: '+13.0%',
+      direction: '增量',
+      strength: '高',
+      reason: '预测区间包含节假日，按节假日客流系数增加基础需求。'
+    });
+  }
+
+  if (settings.promotion) {
+    factors.push({
+      title: '促销因素',
+      impact: '+8.0%',
+      direction: '增量',
+      strength: '中',
+      reason: '用户标记预测期有促销活动，已提高客流与销售额预期。'
+    });
+  }
+
+  if (settings.localEvent) {
+    factors.push({
+      title: '本地活动因素',
+      impact: '+10.0%',
+      direction: '增量',
+      strength: '高',
+      reason: '周边商圈或社区活动会带来额外到店客流，已计入本次预测。'
+    });
+  }
+
+  return factors;
+}
+
+function buildDrivers(rows, confidence, scenarioMultiplier, externalFactors, storeContext) {
   const recent = rows.slice(-14);
   const trafficValues = recent.map((row) => row.traffic);
-  const salesValues = recent.map((row) => row.sales);
   const firstTraffic = trafficValues[0] || 1;
   const lastTraffic = trafficValues[trafficValues.length - 1] || firstTraffic;
   const trendChange = ((lastTraffic - firstTraffic) / firstTraffic) * 100;
@@ -498,8 +643,7 @@ function buildDrivers(rows, confidence, scenarioMultiplier) {
     ? ((ticketValues[ticketValues.length - 1] - ticketValues[0]) / Math.max(ticketValues[0], 1)) * 100
     : 0;
   const promoCount = recent.filter((row) => row.promo).length;
-
-  return [
+  const baseDrivers = [
     ...(scenarioMultiplier !== 1 ? [{
       title: '情景倍率模拟',
       impact: `${round(scenarioMultiplier, 2)}×`,
@@ -545,6 +689,7 @@ function buildDrivers(rows, confidence, scenarioMultiplier) {
       reason: '置信度根据样本数量、历史波动和预测跨度综合计算，不表示结果绝对准确。'
     }
   ];
+  return buildExternalDrivers(externalFactors, storeContext).concat(baseDrivers);
 }
 
 function buildReasonSummary(horizon, predictedTraffic, predictedSales, changeValue, confidence, factors) {
@@ -561,7 +706,8 @@ function buildTableRows(rows, futureRows, confidence) {
     typeClass: 'table-actual',
     traffic: formatNumber(row.traffic),
     sales: formatNumber(row.sales),
-    detail: row.promo ? '含促销' : '常规'
+    detail: row.promo ? '含促销' : '常规',
+    interval: '--'
   }));
 
   const futureTableRows = futureRows.map((row) => ({
@@ -570,7 +716,8 @@ function buildTableRows(rows, futureRows, confidence) {
     typeClass: 'table-forecast',
     traffic: formatNumber(row.traffic),
     sales: formatNumber(row.sales),
-    detail: `${confidence}% 置信度`
+    detail: `${confidence}% 置信度`,
+    interval: `${formatNumber(row.low)} ~ ${formatNumber(row.high)}`
   }));
 
   return historyRows.concat(futureTableRows);
@@ -615,6 +762,74 @@ function buildRecommendations(drivers, scenarioMultiplier, horizon, peak) {
   return recommendations.slice(0, 3);
 }
 
+const ALGORITHM_META = {
+  ensemble: {
+    label: '集成统计模型',
+    method: '0.50×加权移动平均 + 0.35×线性趋势 + 0.15×最近值'
+  },
+  exponential: {
+    label: '指数平滑',
+    method: 'α=0.35 指数平滑 + 星期因子'
+  },
+  holtWinters: {
+    label: '周周期 Holt-Winters',
+    method: '加法 Holt-Winters（7 日周期）'
+  }
+};
+
+function getWeatherFactor(weather) {
+  const weatherMap = { '晴': 1.05, '多云': 1.02, '阴': 0.99, '小雨': 0.94, '中雨': 0.9, '大雨': 0.84, '高温': 0.93, '雪': 0.8 };
+  return weatherMap[weather] || 1;
+}
+
+function getExternalSettings(settings, rows) {
+  const selected = settings.externalFactors || {};
+  const latest = rows[rows.length - 1] || {};
+  const has = (key) => Object.prototype.hasOwnProperty.call(selected, key);
+  return {
+    weather: has('weather') ? selected.weather : (latest.weather || '晴'),
+    holiday: has('holiday') ? Boolean(selected.holiday) : Boolean(latest.holiday),
+    promotion: has('promotion') ? Boolean(selected.promotion) : Boolean(latest.promo),
+    localEvent: has('localEvent') ? Boolean(selected.localEvent) : Boolean(latest.localEvent)
+  };
+}
+
+function getExternalMultiplier(externalSettings, storeContext) {
+  const weatherFactor = getWeatherFactor(externalSettings.weather);
+  const holidayFactor = externalSettings.holiday ? 1.13 : 1;
+  const promotionFactor = externalSettings.promotion ? 1.08 : 1;
+  const localEventFactor = externalSettings.localEvent ? 1.1 : 1;
+  const locationFactor = storeContext ? storeContext.locationFactor : 1;
+  return {
+    weatherFactor,
+    holidayFactor,
+    promotionFactor,
+    localEventFactor,
+    locationFactor,
+    combined: weatherFactor * holidayFactor * promotionFactor * localEventFactor * locationFactor
+  };
+}
+
+function buildFactorBreakdown(baseTraffic, factors, storeContext, weekdayFactor, scenarioMultiplier) {
+  const breakdown = [{ label: '统计基础值', value: formatNumber(baseTraffic), impact: '基准', effect: 1, strength: '中' }];
+  breakdown.push({ label: '星期因子', value: formatNumber(baseTraffic * weekdayFactor), impact: formatPercent((weekdayFactor - 1) * 100), effect: weekdayFactor, strength: Math.abs(weekdayFactor - 1) >= 0.04 ? '高' : '中' });
+  breakdown.push({ label: '情景倍率', value: formatNumber(baseTraffic * scenarioMultiplier), impact: `${round(scenarioMultiplier, 2)}×`, effect: scenarioMultiplier, strength: Math.abs(scenarioMultiplier - 1) >= 0.1 ? '高' : '中' });
+  breakdown.push({ label: '天气', value: formatNumber(baseTraffic * factors.weatherFactor), impact: formatPercent((factors.weatherFactor - 1) * 100), effect: factors.weatherFactor, strength: Math.abs(factors.weatherFactor - 1) >= 0.06 ? '高' : '中' });
+  if (factors.holidayFactor !== 1) {
+    breakdown.push({ label: '节假日', value: formatNumber(baseTraffic * factors.holidayFactor), impact: '+13.0%', effect: factors.holidayFactor, strength: '高' });
+  }
+  if (factors.promotionFactor !== 1) {
+    breakdown.push({ label: '促销', value: formatNumber(baseTraffic * factors.promotionFactor), impact: '+8.0%', effect: factors.promotionFactor, strength: '中' });
+  }
+  if (factors.localEventFactor !== 1) {
+    breakdown.push({ label: '本地活动', value: formatNumber(baseTraffic * factors.localEventFactor), impact: '+10.0%', effect: factors.localEventFactor, strength: '高' });
+  }
+  if (storeContext) {
+    breakdown.push({ label: '位置与周边竞争', value: formatNumber(baseTraffic * factors.locationFactor), impact: formatPercent(storeContext.locationImpact || 0), effect: factors.locationFactor, strength: Math.abs(storeContext.locationImpact || 0) >= 5 ? '高' : '中' });
+  }
+  return breakdown;
+}
+
 function calculateForecast(rows, options) {
   if (!Array.isArray(rows) || rows.length < 3) {
     throw new Error('至少需要 3 行有效数据');
@@ -623,34 +838,37 @@ function calculateForecast(rows, options) {
   const settings = options || {};
   const horizon = clamp(Number(settings.horizon) || 1, 1, 7);
   const scenarioMultiplier = clamp(Number(settings.scenarioMultiplier) || 1, 0.7, 1.5);
-  const recentRows = rows.slice(-14);
+  const algorithm = ALGORITHM_META[settings.algorithm] ? settings.algorithm : 'ensemble';
+  const algorithmMeta = ALGORITHM_META[algorithm];
+  const recentRows = rows.slice(-28);
   const trafficValues = recentRows.map((row) => row.traffic);
-  const regression = linearRegression(trafficValues);
-  const weighted = weightedAverage(trafficValues);
-  const lastValue = trafficValues[trafficValues.length - 1];
   const average = mean(trafficValues);
   const deviation = standardDeviation(trafficValues);
   const volatility = average ? (deviation / average) * 100 : 0;
   const weekdayFactors = buildWeekdayFactors(recentRows);
   const lastDate = parseDate(recentRows[recentRows.length - 1].date);
   const recentTicket = weightedAverage(recentRows.map((row) => row.sales / Math.max(row.traffic, 1)));
+  const externalSettings = getExternalSettings(settings, recentRows);
+  const externalFactors = getExternalMultiplier(externalSettings, settings.storeContext);
   const promoFrequency = recentRows.filter((row) => row.promo).length / recentRows.length;
   const futureRows = [];
 
   for (let index = 1; index <= horizon; index += 1) {
-    const trendValue = regression.intercept + regression.slope * (trafficValues.length + index - 1);
-    const weightedValue = weighted + (trendValue - weighted) * 0.6;
-    let traffic = weightedValue * 0.5 + trendValue * 0.35 + lastValue * 0.15;
     const futureDate = lastDate ? addDays(lastDate, index) : null;
-    const weekdayFactor = futureDate ? weekdayFactors[futureDate.getDay()] : 1;
-    traffic = clamp(traffic * weekdayFactor * scenarioMultiplier, average * 0.55, average * 1.55);
-
-    const ticketFactor = 1 + promoFrequency * 0.015 + index * 0.001;
+    const weekdayIndex = futureDate ? futureDate.getDay() : (trafficValues.length + index - 1) % 7;
+    const weekdayFactor = futureDate ? weekdayFactors[weekdayIndex] : 1;
+    const baseTraffic = predictOneStep(trafficValues, algorithm, weekdayIndex, index);
+    const adjustedTraffic = baseTraffic * weekdayFactor * scenarioMultiplier * externalFactors.combined;
+    const traffic = clamp(adjustedTraffic, average * 0.55, average * 1.7);
+    const ticketFactor = 1 + promoFrequency * 0.015 + index * 0.001 + (externalSettings.promotion ? 0.03 : 0);
     futureRows.push({
       index,
       date: futureDate,
-      label: index === 1 ? '预测日' : `D+${index}`,
+      dateValue: futureDate ? formatDateLong(futureDate) : '',
+      label: index === 1 ? '首日' : `D+${index}`,
       dateLabel: formatDate(futureDate) || `D+${index}`,
+      weekdayFactor,
+      baseTraffic,
       traffic,
       sales: traffic * recentTicket * ticketFactor,
       low: 0,
@@ -661,7 +879,8 @@ function calculateForecast(rows, options) {
   const predictedTraffic = futureRows.reduce((total, row) => total + row.traffic, 0);
   const predictedSales = futureRows.reduce((total, row) => total + row.sales, 0);
   const modelComparison = buildModelComparison(rows.length >= 8 ? rows : recentRows);
-  const bestMape = modelComparison.length ? modelComparison[0].mape : 9;
+  const selectedModel = modelComparison.find((item) => item.key === algorithm) || modelComparison[0] || {};
+  const bestMape = selectedModel.mape !== undefined ? selectedModel.mape : 9;
   const confidence = Math.round(clamp(
     94 - bestMape * 0.8 - (horizon - 1) * 1.15 - Math.max(volatility - 12, 0) * 0.25,
     58,
@@ -680,17 +899,35 @@ function calculateForecast(rows, options) {
     ? ((predictedTraffic - comparableTotal) / comparableTotal) * 100
     : ((predictedTraffic / Math.max(horizon, 1) - average) / Math.max(average, 1)) * 100;
   const peak = futureRows.reduce((selected, row) => row.traffic > selected.traffic ? row : selected, futureRows[0]);
-  const drivers = buildDrivers(recentRows, confidence, scenarioMultiplier);
+  const drivers = buildDrivers(recentRows, confidence, scenarioMultiplier, externalSettings, settings.storeContext);
   const rangeLabel = settings.rangeLabel || (horizon === 1 ? '明日' : `未来 ${horizon} 天`);
   const dataQuality = buildDataQuality(rows);
   const lastTraffic = trafficValues[trafficValues.length - 1];
   const firstTraffic = trafficValues[0];
   const futureMinimum = Math.min.apply(null, futureRows.map((item) => item.traffic));
   const futureMaximum = Math.max.apply(null, futureRows.map((item) => item.traffic));
+  const distribution = buildDistribution(recentRows);
+  const memberShare = distribution.find((item) => item.label === '会员客流') || { value: 0 };
+  const sourceShare = distribution.find((item) => item.label === '小程序客流') || { value: 0 };
+  const firstDay = futureRows[0];
+  const firstDayChange = average ? ((firstDay.traffic - average) / average) * 100 : 0;
+  const firstDayInterval = firstDay.traffic ? ((firstDay.high - firstDay.low) / firstDay.traffic) * 100 : 0;
+  const externalImpactPercent = round((externalFactors.combined - 1) * 100, 1);
+  const factorBreakdown = buildFactorBreakdown(firstDay.baseTraffic, externalFactors, settings.storeContext, firstDay.weekdayFactor, scenarioMultiplier);
+  const method = algorithmMeta.method;
+  const firstDayReason = `首日预测由${algorithmMeta.label}计算出基础客流，再叠加星期因子、情景倍率、天气、节假日、促销、本地活动和位置竞争因子。`;
 
   return {
+    range: settings.range || '',
     rangeLabel,
+    algorithm,
+    algorithmLabel: algorithmMeta.label,
     forecastDateLabel: futureRows[futureRows.length - 1].dateLabel,
+    forecastTargetDate: firstDay.dateValue,
+    firstDayTrafficValue: Math.round(firstDay.traffic),
+    firstDaySalesValue: Math.round(firstDay.sales),
+    predictedTrafficFirstDayValue: Math.round(firstDay.traffic),
+    predictedSalesFirstDayValue: Math.round(firstDay.sales),
     predictedTraffic: formatNumber(predictedTraffic),
     predictedTrafficValue: Math.round(predictedTraffic),
     predictedSales: formatNumber(predictedSales),
@@ -698,6 +935,7 @@ function calculateForecast(rows, options) {
     confidence,
     changeText: `较可比周期 ${formatPercent(changeValue)}`,
     changeValue: round(changeValue, 1),
+    firstDayChangeText: `较近期均值 ${formatPercent(firstDayChange)}`,
     peakLabel: peak.date ? formatDateLong(peak.date) : peak.dateLabel,
     peakTraffic: formatNumber(peak.traffic),
     averageTraffic: formatNumber(average),
@@ -712,8 +950,18 @@ function calculateForecast(rows, options) {
       trafficText: formatNumber(row.traffic)
     })),
     trendPoints: buildTrendPoints(recentRows, futureRows),
-    distribution: buildDistribution(recentRows),
+    distribution,
+    distributionStats: [
+      { label: '会员来源占比', value: `${memberShare.value}%`, note: '最近 28 天' },
+      { label: '小程序来源占比', value: `${sourceShare.value}%`, note: '最近 28 天' },
+      { label: '预计客单价', value: `¥${formatNumber(recentTicket)}`, note: '历史加权值' },
+      { label: '预测区间宽度', value: `${round(firstDayInterval, 1)}%`, note: '首日高低区间' }
+    ],
     drivers,
+    factorBreakdown,
+    externalSettings,
+    externalImpactPercent,
+    storeContext: settings.storeContext || null,
     recommendations: buildRecommendations(drivers, scenarioMultiplier, horizon, peak),
     reasonSummary: buildReasonSummary(
       horizon,
@@ -723,17 +971,25 @@ function calculateForecast(rows, options) {
       confidence,
       drivers
     ),
-    method: '0.50×加权移动平均 + 0.35×线性趋势 + 0.15×最近值',
+    firstDayReason,
+    modelNarrative: `${algorithmMeta.label}在历史回测中的 MAPE 为 ${round(bestMape, 1)}%，本次已结合 ${drivers.length} 个影响因素。`,
+    method,
     modelComparison,
     bestMape: `${round(bestMape, 1)}%`,
     dataQuality,
     tableRows: buildTableRows(rows, futureRows, confidence),
     futureRows: futureRows.map((row) => ({
+      date: row.dateValue,
       dateLabel: row.dateLabel,
+      typeLabel: row.label,
       traffic: formatNumber(row.traffic),
+      trafficValue: Math.round(row.traffic),
       sales: formatNumber(row.sales),
+      salesValue: Math.round(row.sales),
       low: formatNumber(row.low),
-      high: formatNumber(row.high)
+      high: formatNumber(row.high),
+      lowValue: Math.round(row.low),
+      highValue: Math.round(row.high)
     })),
     sourceMeta: settings.sourceMeta || {
       sourceType: '内置示例',
@@ -741,7 +997,7 @@ function calculateForecast(rows, options) {
       validCount: rows.length,
       invalidCount: 0
     },
-    analysisText: `${rangeLabel}预测使用可解释统计模型。样本期内客流由 ${formatNumber(firstTraffic)} 变化至 ${formatNumber(lastTraffic)} 人次，历史波动 ${round(volatility, 1)}%。模型按趋势、近期权重和星期因子计算，未来 ${horizon} 天预计活跃客流集中在 ${peak.date ? formatDateLong(peak.date) : peak.dateLabel}。`
+    analysisText: `${rangeLabel}预测使用${algorithmMeta.label}。样本期内客流由 ${formatNumber(firstTraffic)} 变化至 ${formatNumber(lastTraffic)} 人次，历史波动 ${round(volatility, 1)}%。首日预计 ${formatNumber(firstDay.traffic)} 人次，外部与位置综合影响 ${formatPercent(externalImpactPercent)}，预测峰值集中在 ${peak.date ? formatDateLong(peak.date) : peak.dateLabel}。`
   };
 }
 

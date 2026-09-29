@@ -55,6 +55,67 @@
     >{{item.label}}</view>
   </view>
 
+  <view class="card context-card">
+    <view class="card-head">
+      <view class="card-head-main">
+        <view class="card-title">门店与地理位置</view>
+        <view class="card-note">{{storeContextSummary}}</view>
+      </view>
+      <view class="expand-link" bindtap="openStorePage">选择门店</view>
+    </view>
+    <view wx:if="{{storeContext}}" class="context-grid">
+      <view class="context-item"><view class="metric-label">周边 1 公里</view><view class="context-value">{{storeContext.within1km}} 家</view></view>
+      <view class="context-item"><view class="metric-label">竞争等级</view><view class="context-value">{{storeContext.competitionLevel}}</view></view>
+      <view class="context-item"><view class="metric-label">位置因子</view><view class="context-value">{{storeContext.locationFactor}}</view></view>
+    </view>
+    <view wx:if="{{storeContext}}" class="context-reason">{{storeContext.reasoning}}</view>
+  </view>
+
+  <view class="card algorithm-card">
+    <view class="card-head">
+      <view class="card-head-main">
+        <view class="card-title">预测算法</view>
+        <view class="card-note">当前：{{algorithmLabel}}。可切换到指数平滑或周周期 Holt-Winters 对比。</view>
+      </view>
+    </view>
+    <view class="algorithm-tabs">
+      <view
+        wx:for="{{algorithmOptions}}"
+        wx:key="value"
+        class="algorithm-tab {{algorithm === item.value ? 'algorithm-tab-active' : ''}}"
+        data-algorithm="{{item.value}}"
+        bindtap="selectAlgorithm"
+      >{{item.label}}</view>
+    </view>
+  </view>
+
+  <view class="card factor-control-card">
+    <view class="card-head">
+      <view class="card-head-main">
+        <view class="card-title">外部影响因素</view>
+        <view class="card-note">天气、节假日、促销和周边活动会直接改变预测结果。</view>
+      </view>
+    </view>
+    <view class="factor-control-row">
+      <view class="factor-control-label">天气</view>
+      <picker range="{{weatherOptions}}" bindchange="selectWeather">
+        <view class="factor-picker">{{externalFactors.weather}} ›</view>
+      </picker>
+    </view>
+    <view class="factor-control-row">
+      <view class="factor-control-label">节假日</view>
+      <view class="factor-switch {{externalFactors.holiday ? 'factor-switch-on' : ''}}" data-key="holiday" bindtap="toggleExternalFactor">{{externalFactors.holiday ? '已计入' : '未计入'}}</view>
+    </view>
+    <view class="factor-control-row">
+      <view class="factor-control-label">促销活动</view>
+      <view class="factor-switch {{externalFactors.promotion ? 'factor-switch-on' : ''}}" data-key="promotion" bindtap="toggleExternalFactor">{{externalFactors.promotion ? '已计入' : '未计入'}}</view>
+    </view>
+    <view class="factor-control-row">
+      <view class="factor-control-label">本地活动</view>
+      <view class="factor-switch {{externalFactors.localEvent ? 'factor-switch-on' : ''}}" data-key="localEvent" bindtap="toggleExternalFactor">{{externalFactors.localEvent ? '已计入' : '未计入'}}</view>
+    </view>
+  </view>
+
   <view wx:if="{{loading || calculating}}" class="card empty-state">
     {{loading ? '正在载入经营数据...' : '正在重新计算结果...'}}
   </view>
@@ -105,6 +166,24 @@
       </view>
 
       <view class="sub-title table-title">预测明细</view>
+      <view class="first-day-panel">
+        <view class="first-day-head">
+          <view class="sub-title">首日预测拆解</view>
+          <view class="mini-chip">{{forecast.algorithmLabel}}</view>
+        </view>
+        <view class="first-day-number">{{forecast.firstDayTrafficValue}}<text class="metric-unit">人次</text></view>
+        <view class="first-day-meta">{{forecast.firstDayChangeText}} · 外部与位置综合影响 {{forecast.externalImpactPercent}}%</view>
+        <view class="reason-text">{{forecast.firstDayReason}}</view>
+        <view class="draft-chart">
+          <view class="draft-line" wx:for="{{forecast.factorBreakdown}}" wx:key="label">
+            <view class="draft-axis"></view>
+            <view class="draft-label">{{item.label}}</view>
+            <view class="draft-value">{{item.value}}</view>
+            <view class="draft-impact">{{item.impact}}</view>
+          </view>
+        </view>
+      </view>
+
       <scroll-view scroll-x class="data-table-wrap">
         <view class="data-table">
           <view class="data-row data-head">
@@ -112,14 +191,14 @@
             <view class="data-cell">类型</view>
             <view class="data-cell">客流</view>
             <view class="data-cell">销售额</view>
-            <view class="data-cell wide-cell">说明</view>
+            <view class="data-cell wide-cell">区间 / 说明</view>
           </view>
           <view class="data-row" wx:for="{{forecast.tableRows}}" wx:key="period">
             <view class="data-cell wide-cell">{{item.period}}</view>
             <view class="data-cell"><text class="table-type {{item.typeClass}}">{{item.type}}</text></view>
             <view class="data-cell">{{item.traffic}}</view>
             <view class="data-cell">{{item.sales}}</view>
-            <view class="data-cell wide-cell">{{item.detail}}</view>
+            <view class="data-cell wide-cell">{{item.interval}} · {{item.detail}}</view>
           </view>
         </view>
       </scroll-view>
@@ -177,6 +256,14 @@
               <view class="legend-value">{{item.value}}%</view>
             </view>
           </view>
+        </view>
+      </view>
+
+      <view class="metric-grid compact-grid distribution-stats">
+        <view class="metric-card quiet-card" wx:for="{{forecast.distributionStats}}" wx:key="label">
+          <view class="metric-label">{{item.label}}</view>
+          <view class="metric-value small-value">{{item.value}}</view>
+          <view class="metric-note">{{item.note}}</view>
         </view>
       </view>
 
@@ -323,5 +410,25 @@
     </view>
 
     <view class="page-footnote">预测结果来自历史数据统计，不构成经营保证；上线生产时建议将模型接口放入云函数。</view>
+    <view class="section">
+      <view class="section-title">预测误差追踪</view>
+      <view class="section-note">每次运行会本机留痕，之后导入包含目标日期的实际客流即可自动回填误差。</view>
+      <view class="card error-card">
+        <view class="error-summary">
+          <view><view class="metric-label">已回填样本</view><view class="error-value">{{errorStats.count}}</view></view>
+          <view><view class="metric-label">平均 MAPE</view><view class="error-value">{{errorStats.mapeText}}</view></view>
+          <view><view class="metric-label">平均绝对误差</view><view class="error-value">{{errorStats.averageErrorText}}</view></view>
+        </view>
+        <view class="error-direction">{{errorStats.directionText}}</view>
+        <view class="error-run" wx:for="{{forecastRuns}}" wx:key="id">
+          <view class="error-run-main">
+            <view class="error-run-title">{{item.targetLabel || '预测日'}} · {{item.algorithmLabel || item.algorithm}}</view>
+            <view class="error-run-note">预测 {{item.predictedTrafficFirstDay}} 人次<span wx:if="{{item.actualTraffic}}"> · 实际 {{item.actualTraffic}} 人次</span></view>
+          </view>
+          <view class="tag {{item.errorRate ? 'tag-high' : 'tag-low'}}">{{item.errorRateText || '待回填'}}</view>
+        </view>
+      </view>
+    </view>
+
   </block>
 </view>

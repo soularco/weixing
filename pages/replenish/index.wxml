@@ -4,12 +4,18 @@
       <view class="page-title">补货建议</view>
       <view class="page-subtitle">结合库存覆盖天数、预测销量和活动影响生成</view>
     </view>
-    <view class="status-chip">演示数据</view>
+    <view class="status-chip {{linkedForecast ? 'chip-ready' : ''}}">{{linkedForecast ? '已联动预测' : '演示数据'}}</view>
   </view>
 
   <view wx:if="{{loading}}" class="card empty-state">正在计算库存风险...</view>
 
   <block wx:else>
+    <view wx:if="{{linkedForecast}}" class="card linked-card">
+      <view class="list-title">已联动预测需求</view>
+      <view class="list-desc">首日预计 {{linkedForecast.predictedTrafficFirstDayValue}} 人次，补货数量按需求系数自动调整。</view>
+      <view class="linked-meta">置信度 {{linkedForecast.confidence}}% · 位置因子 {{linkedForecast.locationFactor}} · {{linkedForecast.rangeLabel}}</view>
+    </view>
+
     <view class="summary-strip">
       <view>
         <view class="metric-label">待处理商品</view>

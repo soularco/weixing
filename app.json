@@ -2,6 +2,7 @@
   "pages": [
     "pages/home/index",
     "pages/forecast/index",
+    "pages/store/index",
     "pages/schedule/index",
     "pages/replenish/index"
   ],
@@ -27,6 +28,10 @@
         "text": "预测"
       },
       {
+        "pagePath": "pages/store/index",
+        "text": "门店"
+      },
+      {
         "pagePath": "pages/schedule/index",
         "text": "排班"
       },
@@ -36,6 +41,12 @@
       }
     ]
   },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于选择门店位置并分析周边客流环境"
+    }
+  },
+  "requiredPrivateInfos": ["getLocation", "chooseLocation"],
   "style": "v2",
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents"

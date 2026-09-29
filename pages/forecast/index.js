@@ -1,5 +1,7 @@
 const operations = require('../../services/operations');
 const forecastEngine = require('../../utils/forecast-engine');
+const forecastStore = require('../../utils/forecast-store');
+const storeContextUtil = require('../../utils/store-context');
 
 const RANGE_CONFIG = {
   tomorrow: { horizon: 1, label: '明日' },
@@ -48,6 +50,25 @@ Page({
     summaryExpanded: false,
     driversExpanded: false,
     modelExpanded: false,
+    tomorrowExpanded: true,
+    algorithm: 'ensemble',
+    algorithmLabel: '集成统计模型',
+    algorithmOptions: [
+      { label: '集成统计', value: 'ensemble' },
+      { label: '指数平滑', value: 'exponential' },
+      { label: 'Holt-Winters', value: 'holtWinters' }
+    ],
+    storeContext: null,
+    storeContextSummary: '未选择门店，使用基础预测',
+    externalFactors: {
+      weather: '晴',
+      holiday: false,
+      promotion: false,
+      localEvent: false
+    },
+    weatherOptions: ['晴', '多云', '阴', '小雨', '中雨', '大雨', '高温', '雪'],
+    forecastRuns: [],
+    errorStats: null,
     importText: '',
     importSummary: '内置 28 天样板数据',
     importMessage: '',
@@ -70,21 +91,48 @@ Page({
       modelName: settings.modelName || ''
     });
 
-    operations.getForecastHistory().then((payload) => {
+    const saved = forecastStore.getSourceSnapshot();
+    const sourcePromise = saved && saved.rows.length
+      ? Promise.resolve(saved)
+      : operations.getForecastHistory();
+
+    sourcePromise.then((payload) => {
       this.sourceRows = payload.rows;
-      this.sourceMeta = payload.meta;
+      this.sourceMeta = saved && saved.meta ? saved.meta : payload.meta;
+      const runs = forecastStore.getForecastRuns(this.sourceRows);
+      const errorStats = forecastStore.getErrorStats(runs);
+      const context = forecastStore.getStoreContext();
       this.setData({
         loading: false,
-        importSummary: `${payload.meta.validCount} 天样例数据可用`,
-        importText: ''
+        importSummary: `${this.sourceMeta.validCount} 天${saved ? '本机保存' : '样例'}数据可用`,
+        importText: '',
+        storeContext: context,
+        storeContextSummary: context && context.store ? `${context.store.name} · ${context.competitionLevel}竞争` : '未选择门店，使用基础预测',
+        forecastRuns: runs.slice(0, 4),
+        errorStats
       }, () => {
-        this.recalculateForecast('tomorrow');
+        this.recalculateForecast(this.data.range);
       });
     }).catch(() => {
       this.setData({
         loading: false,
-        importMessage: '示例数据载入失败，请重新编译小程序。'
+        importMessage: '样例数据载入失败，请重新编译小程序。'
       });
+    });
+  },
+
+  onShow() {
+    const context = forecastStore.getStoreContext();
+    const runs = forecastStore.getForecastRuns(this.sourceRows || []);
+    this.setData({
+      storeContext: context,
+      storeContextSummary: context && context.store ? `${context.store.name} · ${context.competitionLevel}竞争` : '未选择门店，使用基础预测',
+      forecastRuns: runs.slice(0, 4),
+      errorStats: forecastStore.getErrorStats(runs)
+    }, () => {
+      if (this.sourceRows && this.data.forecast) {
+        this.recalculateForecast(this.data.range);
+      }
     });
   },
 
@@ -132,12 +180,24 @@ Page({
         horizon: config.horizon,
         rangeLabel: config.label,
         sourceMeta: this.sourceMeta,
-        scenarioMultiplier: this.data.scenarioMultiplier
+        scenarioMultiplier: this.data.scenarioMultiplier,
+        range: selectedRange,
+        algorithm: this.data.algorithm,
+        storeContext: this.data.storeContext,
+        externalFactors: this.data.externalFactors
       });
       this.setData({
         calculating: false,
         forecast: this.decorateForecast(forecast)
       }, () => {
+        forecastStore.saveForecastOutputs(forecast, this.data.storeContext);
+        forecastStore.recordPredictionRun(forecast);
+        const runs = forecastStore.getForecastRuns(this.sourceRows || []);
+        this.setData({
+          forecastRuns: runs.slice(0, 4),
+          errorStats: forecastStore.getErrorStats(runs),
+          algorithmLabel: forecast.algorithmLabel || this.data.algorithmLabel
+        });
         this.renderCharts();
       });
     } catch (error) {
@@ -160,6 +220,10 @@ Page({
       ...forecast,
       drivers,
       topDrivers: drivers.slice(0, 2),
+      factorBreakdown: (forecast.factorBreakdown || []).map((item) => ({
+        ...item,
+        strengthClass: item.strength === '高' ? 'strength-high' : item.strength === '中' ? 'strength-medium' : 'strength-low'
+      })),
       qualityGrade: qualityScore >= 90 ? '优秀' : qualityScore >= 80 ? '良好' : '可用',
       modelComparison: (forecast.modelComparison || []).map((model, index) => ({
         ...model,
@@ -193,6 +257,7 @@ Page({
     operations.getForecastHistory().then((payload) => {
       this.sourceRows = payload.rows;
       this.sourceMeta = payload.meta;
+      forecastStore.saveSourceSnapshot(this.sourceRows, this.sourceMeta);
       this.setData({
         importText: '',
         importSummary: `${payload.meta.validCount} 天样例数据可用`,
@@ -240,6 +305,7 @@ Page({
         ...parsed.meta,
         sourceType: sourceType === 'message-file' ? '文件导入' : '粘贴导入'
       };
+      forecastStore.saveSourceSnapshot(this.sourceRows, this.sourceMeta);
       this.setData({
         importSummary: `有效 ${parsed.meta.validCount} 行，剔除 ${parsed.meta.invalidCount} 行`,
         importMessage: '数据已通过格式校验，正在使用本地模型计算。',
@@ -291,6 +357,50 @@ Page({
     }, () => {
       this.recalculateForecast(this.data.range);
     });
+  },
+
+  selectAlgorithm(event) {
+    const algorithm = event.currentTarget.dataset.algorithm;
+    const option = this.data.algorithmOptions.find((item) => item.value === algorithm);
+    if (!option) {
+      return;
+    }
+    this.setData({
+      algorithm,
+      algorithmLabel: option.label
+    }, () => {
+      this.recalculateForecast(this.data.range);
+    });
+  },
+
+  selectWeather(event) {
+    const weather = event.detail.value;
+    this.setData({
+      externalFactors: {
+        ...this.data.externalFactors,
+        weather
+      }
+    }, () => {
+      this.recalculateForecast(this.data.range);
+    });
+  },
+
+  toggleExternalFactor(event) {
+    const key = event.currentTarget.dataset.key;
+    if (!key || !Object.prototype.hasOwnProperty.call(this.data.externalFactors, key)) {
+      return;
+    }
+    const externalFactors = {
+      ...this.data.externalFactors,
+      [key]: !this.data.externalFactors[key]
+    };
+    this.setData({ externalFactors }, () => {
+      this.recalculateForecast(this.data.range);
+    });
+  },
+
+  openStorePage() {
+    wx.switchTab({ url: '/pages/store/index' });
   },
 
   saveModelSettings() {
