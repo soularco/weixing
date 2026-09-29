@@ -1,4 +1,8 @@
 .chip-ready {
+  border-color: #9bd8c3;
+  background: #dff5ed;
+}
+
 .linked-card {
   margin-bottom: 18rpx;
 }
@@ -24,10 +28,6 @@
   color: #0b6b4f;
   font-size: 27rpx;
   font-weight: 700;
-}
-
-  border-color: #9bd8c3;
-  background: #dff5ed;
 }
 
 .coverage-grid {
